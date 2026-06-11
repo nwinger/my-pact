@@ -1,0 +1,205 @@
+import { daysAgoKey, toKey, addDays } from '@/lib/dates';
+import type { AppNotification, CheckIn, Friendship, Pact, User } from '@/store/types';
+
+export const ME = 'u-me';
+
+export const seedUsers: User[] = [
+  { id: ME, username: 'nicklas', email: 'you@mypact.app', timezone: 'Europe/Oslo', notificationTime: '08:00', tintIndex: 1 },
+  { id: 'u-mia', username: 'mia', email: 'mia@mypact.app', timezone: 'Europe/Oslo', notificationTime: '07:30', tintIndex: 2 },
+  { id: 'u-jonas', username: 'jonas', email: 'jonas@mypact.app', timezone: 'Europe/Oslo', notificationTime: '09:00', tintIndex: 0 },
+  { id: 'u-sofia', username: 'sofia', email: 'sofia@mypact.app', timezone: 'Europe/Stockholm', notificationTime: '06:45', tintIndex: 3 },
+  { id: 'u-emil', username: 'emil', email: 'emil@mypact.app', timezone: 'Europe/Oslo', notificationTime: '08:15', tintIndex: 4 },
+  { id: 'u-anna', username: 'anna', email: 'anna@mypact.app', timezone: 'Europe/Copenhagen', notificationTime: '07:00', tintIndex: 2 },
+];
+
+export const seedFriendships: Friendship[] = [
+  { id: 'f-1', requesterId: ME, addresseeId: 'u-mia', status: 'accepted', createdAt: daysAgoKey(120) },
+  { id: 'f-2', requesterId: 'u-jonas', addresseeId: ME, status: 'accepted', createdAt: daysAgoKey(90) },
+  { id: 'f-3', requesterId: ME, addresseeId: 'u-sofia', status: 'accepted', createdAt: daysAgoKey(60) },
+  { id: 'f-4', requesterId: 'u-emil', addresseeId: ME, status: 'accepted', createdAt: daysAgoKey(30) },
+  { id: 'f-5', requesterId: 'u-anna', addresseeId: ME, status: 'pending', createdAt: daysAgoKey(1) },
+];
+
+function pact(p: Omit<Pact, 'status' | 'isMutual'> & Partial<Pick<Pact, 'status' | 'isMutual'>>): Pact {
+  return { status: 'active', isMutual: false, ...p };
+}
+
+export const seedPacts: Pact[] = [
+  pact({
+    id: 'p-run',
+    creatorUserId: ME,
+    keeperUserId: 'u-mia',
+    title: 'Morning run before work',
+    description: 'Out the door by 6:45, no snooze.',
+    type: 'frequency',
+    daysOfWeek: [1, 2, 3, 4, 5],
+    startDate: daysAgoKey(24),
+    endDate: toKey(addDays(new Date(), 36)),
+    tintIndex: 0,
+  }),
+  pact({
+    id: 'p-read',
+    creatorUserId: ME,
+    keeperUserId: 'u-jonas',
+    title: 'Read 12 books this season',
+    type: 'goal',
+    goalTarget: 12,
+    goalUnit: 'books',
+    startDate: daysAgoKey(45),
+    endDate: toKey(addDays(new Date(), 75)),
+    tintIndex: 1,
+  }),
+  pact({
+    id: 'p-meditate',
+    creatorUserId: ME,
+    keeperUserId: 'u-sofia',
+    title: 'Meditate every single day',
+    description: 'Ten quiet minutes, anywhere.',
+    type: 'frequency',
+    daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    startDate: daysAgoKey(12),
+    endDate: toKey(addDays(new Date(), 48)),
+    isMutual: true,
+    mutualPactId: 'p-meditate-sofia',
+    tintIndex: 2,
+  }),
+  pact({
+    id: 'p-swim',
+    creatorUserId: ME,
+    keeperUserId: 'u-emil',
+    title: 'Swim 40 km before summer',
+    type: 'goal',
+    goalTarget: 40,
+    goalUnit: 'km',
+    startDate: daysAgoKey(30),
+    endDate: toKey(addDays(new Date(), 60)),
+    tintIndex: 3,
+  }),
+  pact({
+    id: 'p-sugar',
+    creatorUserId: ME,
+    keeperUserId: 'u-mia',
+    title: 'No sugar on weekdays',
+    type: 'frequency',
+    daysOfWeek: [1, 2, 3, 4, 5],
+    startDate: daysAgoKey(80),
+    endDate: daysAgoKey(10),
+    status: 'completed',
+    tintIndex: 4,
+  }),
+];
+
+/** Pacts where I'm the keeper (a friend is the creator). */
+export const seedKeeperPacts: Pact[] = [
+  pact({
+    id: 'p-jonas-gym',
+    creatorUserId: 'u-jonas',
+    keeperUserId: ME,
+    title: 'Gym three times a week',
+    type: 'frequency',
+    daysOfWeek: [1, 3, 5],
+    startDate: daysAgoKey(20),
+    endDate: toKey(addDays(new Date(), 40)),
+    tintIndex: 1,
+  }),
+];
+
+/**
+ * Deterministic-ish realistic history:
+ *  - run pact: solid 9-weekday streak, one miss 10 days back
+ *  - meditate: perfect since start (12 days) → big streak
+ *  - read: 7 of 12 books logged
+ *  - swim: 26.5 of 40 km
+ */
+export function buildSeedCheckIns(): CheckIn[] {
+  const out: CheckIn[] = [];
+  let n = 0;
+  const push = (c: Omit<CheckIn, 'id'>) => out.push({ id: `c-${n++}`, ...c });
+
+  // Morning run — weekdays, missed exactly 10 days ago, none today yet
+  for (let i = 1; i <= 24; i++) {
+    const key = daysAgoKey(i);
+    const dow = new Date(key + 'T12:00:00').getDay();
+    if (dow === 0 || dow === 6) continue;
+    if (i === 10) {
+      push({ pactId: 'p-run', userId: ME, date: key, status: 'failed' });
+      continue;
+    }
+    push({ pactId: 'p-run', userId: ME, date: key, status: 'completed' });
+  }
+
+  // Meditate — every day since start, including a long mutual streak
+  for (let i = 1; i <= 12; i++) {
+    push({ pactId: 'p-meditate', userId: ME, date: daysAgoKey(i), status: 'completed' });
+  }
+
+  // Books — 7 logged across the window
+  const bookDays = [44, 38, 31, 24, 17, 9, 3];
+  for (const d of bookDays) {
+    push({ pactId: 'p-read', userId: ME, date: daysAgoKey(d), status: 'completed', progressValue: 1 });
+  }
+
+  // Swim — sessions of varying distance, 26.5 km total
+  const swims: [number, number][] = [
+    [28, 2.0], [25, 3.0], [22, 2.5], [19, 3.5], [16, 2.0],
+    [13, 3.0], [11, 2.5], [8, 3.0], [5, 2.5], [2, 2.5],
+  ];
+  for (const [d, km] of swims) {
+    push({ pactId: 'p-swim', userId: ME, date: daysAgoKey(d), status: 'completed', progressValue: km });
+  }
+
+  // Completed sugar pact — fill its weekdays
+  for (let i = 10; i <= 80; i++) {
+    const key = daysAgoKey(i);
+    const dow = new Date(key + 'T12:00:00').getDay();
+    if (dow === 0 || dow === 6) continue;
+    push({ pactId: 'p-sugar', userId: ME, date: key, status: 'completed' });
+  }
+
+  return out;
+}
+
+export const seedNotifications: AppNotification[] = [
+  {
+    id: 'n-1',
+    type: 'friend_request',
+    title: 'New pact request',
+    body: 'anna wants to be your friend on My Pact.',
+    sentAt: 'Today · 09:12',
+    friendId: 'u-anna',
+  },
+  {
+    id: 'n-2',
+    type: 'daily_reminder',
+    title: 'Two pacts due today',
+    body: 'Morning run and meditation are waiting for your seal.',
+    sentAt: 'Today · 08:00',
+    pactId: 'p-run',
+  },
+  {
+    id: 'n-3',
+    type: 'pact_breach',
+    title: 'jonas missed the gym',
+    body: 'You are the keeper. A gentle nudge goes a long way.',
+    sentAt: 'Yesterday · 21:30',
+    pactId: 'p-jonas-gym',
+  },
+  {
+    id: 'n-4',
+    type: 'pact_completed',
+    title: 'Pact sealed & completed',
+    body: '“No sugar on weekdays” ran its full course. Mia is proud.',
+    sentAt: 'Mon · 10:04',
+    pactId: 'p-sugar',
+    readAt: 'read',
+  },
+  {
+    id: 'n-5',
+    type: 'friend_accepted',
+    title: 'emil accepted your request',
+    body: 'You can now form pacts together.',
+    sentAt: 'Last week',
+    friendId: 'u-emil',
+    readAt: 'read',
+  },
+];

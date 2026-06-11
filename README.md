@@ -1,56 +1,62 @@
-# Welcome to your Expo app 👋
+# My Pact
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**Habits stick when witnessed.**
 
-## Get started
+My Pact is a social habit-tracking app built with Expo (iOS + Android + web).
+Users commit to habits through accountability contracts — *pacts* — witnessed
+by a friend (the *keeper*). The app drives the loop with daily check-ins
+("seals"), streaks, and breach notifications.
 
-1. Install dependencies
+This repository contains the mobile client with a fully interactive mock data
+layer; the API/backend described in the product spec plugs in behind the
+zustand store.
 
-   ```bash
-   npm install
-   ```
+## Design
 
-2. Start the app
+An "ink on paper" contract aesthetic:
 
-   ```bash
-   npx expo start
-   ```
+- **Typography** — Fraunces (editorial serif, 600–900 incl. italics) for
+  display, Quicksand (rounded sans) for body and UI.
+- **Surfaces** — warm cream paper with soft tinted glows and a printed dot
+  grain; cards are ink-bordered "tickets" with pastel header bands (butter,
+  periwinkle, blush, mint, clay).
+- **The seal** — checking in presses a scalloped wax seal onto the day, with a
+  spring stamp animation, particle burst, and haptics. Missed days, streak
+  flames, and keeper "signatures" (italic serif) carry the contract metaphor
+  through every screen.
+- **Motion** — react-native-reanimated v4 throughout: staggered entrances,
+  springy pressables, animated progress rings, a paper-lift welcome overlay.
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Running it
 
 ```bash
-npm run reset-project
+npm install
+npx expo start          # iOS / Android via Expo Go or dev build
+npx expo start --web    # web preview
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Structure
 
-### Other setup steps
+```
+src/
+  app/            expo-router routes (stack: main, create modal, pact/[id], inbox)
+  screens/        the four tab scenes (home, pacts, friends, profile)
+  components/     pact cards, tab bar, seal button, sheet, primitives in ui/
+  store/          zustand mock store + seed data + tab state
+  lib/            date helpers, streak/progress math
+  theme/          design tokens (colors, fonts, radii, shadows)
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Tab navigation is owned by a small zustand store (`use-tabs.ts`) rather than a
+router tab navigator — all four scenes stay mounted with their scroll state,
+and inactive ones are `display: none`. This sidesteps an expo-router web issue
+where inactive tab scenes stay visible, and behaves identically on native.
 
-## Learn more
+## Domain rules (mirrored from the product spec)
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- Pacts are frequency-based (daily / chosen weekdays) or goal-based
+  (target + unit, e.g. 40 km).
+- Mutual pacts link two commitments; both sides check in.
+- Check-ins close at end-of-day in the user's timezone + 30 min grace.
+- Check-ins are immutable; streak math respects required days of week.
+- Keepers are notified of misses, breaches, and completions.
