@@ -8,6 +8,8 @@
     "@expo/ui": "~56.0.17",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.18.0",
+    "better-auth": "^1.6.16",
+    "drizzle-orm": "^0.45.2",
     "expo": "~56.0.11",
     "expo-constants": "~56.0.18",
     "expo-device": "~56.0.4",
@@ -25,6 +27,8 @@
     "expo-symbols": "~56.0.6",
     "expo-system-ui": "~56.0.5",
     "expo-web-browser": "~56.0.5",
+    "hono": "^4.12.25",
+    "postgres": "^3.4.9",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.85.3",
@@ -38,10 +42,13 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@hono/node-server": "^2.0.4",
     "@resvg/resvg-js": "^2.6.2",
     "@types/react": "~19.2.2",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~56.0.4",
+    "tsx": "^4.22.4",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -50,7 +57,11 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "api": "tsx watch server/index.ts",
+    "auth:schema": "npx -y @better-auth/cli@latest generate --config server/auth.ts --output server/db/auth-schema.ts -y",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
   },
   "private": true
 }
