@@ -12,7 +12,7 @@ export const colors = {
   // Ink
   ink: '#221C14',
   ink70: 'rgba(34,28,20,0.70)',
-  ink50: 'rgba(34,28,20,0.50)',
+  ink50: 'rgba(34,28,20,0.62)',
   ink30: 'rgba(34,28,20,0.30)',
   line: 'rgba(34,28,20,0.16)',
   lineSoft: 'rgba(34,28,20,0.09)',

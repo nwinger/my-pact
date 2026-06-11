@@ -64,3 +64,15 @@ export function daysUntil(key: string): number {
   const ms = keyToDate(key).getTime() - keyToDate(todayKey()).getTime();
   return Math.round(ms / 86_400_000);
 }
+
+/**
+ * Spec rule: the check-in window for a day closes at end-of-day plus a
+ * 30-minute grace period. Inside that window (00:00–00:30), yesterday is
+ * still sealable — this returns its key, otherwise null.
+ */
+export function gracePeriodKey(now: Date = new Date()): string | null {
+  if (now.getHours() === 0 && now.getMinutes() < 30) {
+    return toKey(addDays(now, -1));
+  }
+  return null;
+}

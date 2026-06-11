@@ -131,6 +131,9 @@ function DarkTab({
     <PressableScale
       onPress={onPress}
       scaleTo={0.9}
+      accessibilityRole="tab"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
       style={{ alignItems: 'center', gap: 2, width: 56, paddingVertical: 3 }}
     >
       <View

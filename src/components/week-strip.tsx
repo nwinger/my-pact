@@ -19,7 +19,7 @@ export function WeekStrip({ cells }: { cells: DayCell[] }) {
             entering={FadeInDown.delay(200 + i * 50).springify().damping(14)}
             style={{ alignItems: 'center', gap: 6 }}
           >
-            <Small color={colors.ink30}>{letter}</Small>
+            <Small color={colors.ink50}>{letter}</Small>
             <View
               style={{
                 width: 34,

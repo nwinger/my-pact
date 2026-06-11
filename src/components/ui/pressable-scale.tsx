@@ -35,6 +35,7 @@ export function PressableScale({
 
   return (
     <AnimatedPressable
+      accessibilityRole="button"
       {...rest}
       style={[style, animStyle]}
       onPressIn={(e) => {

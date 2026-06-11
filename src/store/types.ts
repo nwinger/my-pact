@@ -7,7 +7,7 @@ export type User = {
   tintIndex: number; // avatar tint
 };
 
-export type FriendshipStatus = 'pending' | 'accepted' | 'declined';
+export type FriendshipStatus = 'pending' | 'accepted' | 'declined' | 'blocked';
 
 export type Friendship = {
   id: string;

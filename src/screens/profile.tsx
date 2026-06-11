@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,9 +7,10 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { ScreenHeader } from '@/components/screen-header';
 import { Paper } from '@/components/ui/paper';
 import { Avatar } from '@/components/ui/avatar';
-import { FlameIcon } from '@/components/ui/icons';
+import { ChevronRightIcon, FlameIcon } from '@/components/ui/icons';
+import { PressableScale } from '@/components/ui/pressable-scale';
 import { Body, BodyBold, Display, Kicker, Small } from '@/components/ui/type';
-import { completedCount, currentStreak } from '@/lib/streaks';
+import { currentStreak, longestStreak } from '@/lib/streaks';
 import { useFriends, useMe, useStore } from '@/store/use-store';
 import { colors, radii, shadows } from '@/theme/tokens';
 
@@ -73,14 +75,14 @@ export function ProfileScreen() {
       0,
       ...mine.filter((p) => p.status === 'active').map((p) => currentStreak(p, checkIns))
     );
-    const sealed = mine.reduce((acc, p) => acc + completedCount(p, checkIns), 0);
-    void sealed;
+    const longest = Math.max(0, ...mine.map((p) => longestStreak(p, checkIns)));
     return {
       pactsMade: mine.length,
       keeping: keeping.length,
       totalCheckIns,
       successRate,
       best,
+      longest,
     };
   }, [pacts, checkIns, me.id]);
 
@@ -121,17 +123,42 @@ export function ProfileScreen() {
         </View>
       </Animated.View>
 
+      <Animated.View entering={FadeInDown.delay(150).duration(400)}>
+        <PressableScale
+          onPress={() => router.push('/settings')}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            backgroundColor: colors.card,
+            borderWidth: 1.5,
+            borderColor: colors.ink,
+            borderRadius: radii.lg,
+            paddingVertical: 14,
+            paddingHorizontal: 18,
+            boxShadow: shadows.card,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <BodyBold>Settings</BodyBold>
+            <Small color={colors.ink50}>Username, reminders, timezone, sign out</Small>
+          </View>
+          <ChevronRightIcon size={18} strokeWidth={2.2} color={colors.ink50} />
+        </PressableScale>
+      </Animated.View>
+
       <Animated.View entering={FadeInDown.delay(180).duration(400)}>
         <Kicker color={colors.ink50}>The record</Kicker>
       </Animated.View>
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
         <StatTile index={0} label="Current streak" value={stats.best} tint={colors.butterSoft} flame />
-        <StatTile index={1} label="Success rate" value={`${stats.successRate}%`} tint={colors.mintSoft} />
-        <StatTile index={2} label="Seals pressed" value={stats.totalCheckIns} tint={colors.blushSoft} />
-        <StatTile index={3} label="Pacts made" value={stats.pactsMade} tint={colors.periwinkleSoft} />
-        <StatTile index={4} label="Keeping watch" value={stats.keeping} tint={colors.claySoft} />
-        <StatTile index={5} label="Witnesses" value={friends.length} tint={colors.card} />
+        <StatTile index={1} label="Longest streak" value={stats.longest} tint={colors.mintSoft} />
+        <StatTile index={2} label="Success rate" value={`${stats.successRate}%`} tint={colors.periwinkleSoft} />
+        <StatTile index={3} label="Seals pressed" value={stats.totalCheckIns} tint={colors.blushSoft} />
+        <StatTile index={4} label="Pacts made" value={stats.pactsMade} tint={colors.butterSoft} />
+        <StatTile index={5} label="Keeping watch" value={stats.keeping} tint={colors.claySoft} />
+        <StatTile index={6} label="Witnesses" value={friends.length} tint={colors.card} />
       </View>
 
       <Animated.View

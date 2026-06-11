@@ -4,6 +4,7 @@ import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { GoalLogSheet } from '@/components/goal-log-sheet';
 import { WeekStrip } from '@/components/week-strip';
 import { Paper } from '@/components/ui/paper';
 import { Avatar } from '@/components/ui/avatar';
@@ -42,7 +43,7 @@ import {
   lastSevenDays,
   progressRatio,
 } from '@/lib/streaks';
-import { useStore, useUser } from '@/store/use-store';
+import { useMe, useStore, useUser } from '@/store/use-store';
 import { colors, radii, shadows, ticketTints } from '@/theme/tokens';
 
 export default function PactDetail() {
@@ -52,9 +53,12 @@ export default function PactDetail() {
   const checkIns = useStore((s) => s.checkIns);
   const checkIn = useStore((s) => s.checkIn);
   const cancelPact = useStore((s) => s.cancelPact);
+  const me = useMe();
   const keeper = useUser(pact?.keeperUserId);
+  const creator = useUser(pact?.creatorUserId);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [goalOpen, setGoalOpen] = useState(false);
 
   const history = useMemo(
     () =>
@@ -65,6 +69,8 @@ export default function PactDetail() {
   );
 
   if (!pact) return null;
+
+  const iAmCreator = pact.creatorUserId === me.id;
 
   const tint = ticketTints[pact.tintIndex % ticketTints.length];
   const ratio = progressRatio(pact, checkIns);
@@ -205,10 +211,16 @@ export default function PactDetail() {
                 gap: 12,
               }}
             >
-              {keeper && <Avatar user={keeper} size={40} />}
+              {(iAmCreator ? keeper : creator) && (
+                <Avatar user={(iAmCreator ? keeper : creator)!} size={40} />
+              )}
               <View style={{ flex: 1 }}>
-                <Small color={colors.ink50}>Witnessed & kept by</Small>
-                <HeadingItalic style={{ fontSize: 18 }}>{keeper?.username}</HeadingItalic>
+                <Small color={colors.ink50}>
+                  {iAmCreator ? 'Witnessed & kept by' : 'You witness'}
+                </Small>
+                <HeadingItalic style={{ fontSize: 18 }}>
+                  {iAmCreator ? keeper?.username : creator?.username}
+                </HeadingItalic>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -222,8 +234,8 @@ export default function PactDetail() {
           </View>
         </Animated.View>
 
-        {/* today action */}
-        {pact.status === 'active' && due && (
+        {/* today action — only the creator checks in */}
+        {iAmCreator && pact.status === 'active' && due && (
           <Animated.View
             entering={FadeInDown.delay(220).duration(450)}
             style={{
@@ -248,7 +260,14 @@ export default function PactDetail() {
                   : 'Closes at midnight + 30 min grace.'}
               </Small>
             </View>
-            <SealButton done={done} onSeal={() => checkIn(pact.id, pact.type === 'goal' ? 1 : undefined)} size={50} />
+            <SealButton
+              done={done}
+              onSeal={() => {
+                if (pact.type === 'goal') setGoalOpen(true);
+                else checkIn(pact.id);
+              }}
+              size={50}
+            />
           </Animated.View>
         )}
 
@@ -267,7 +286,7 @@ export default function PactDetail() {
           >
             <BodySemi>Check-in history · {history.length}</BodySemi>
           </PressableScale>
-          {pact.status === 'active' && (
+          {iAmCreator && pact.status === 'active' && (
             <PressableScale
               onPress={() => setConfirmCancel(true)}
               style={{ alignItems: 'center', paddingVertical: 8 }}
@@ -327,6 +346,15 @@ export default function PactDetail() {
           ))}
         </ScrollView>
       </Sheet>
+
+      {pact.type === 'goal' && (
+        <GoalLogSheet
+          pact={pact}
+          open={goalOpen}
+          onClose={() => setGoalOpen(false)}
+          onLog={(v) => checkIn(pact.id, { progressValue: v })}
+        />
+      )}
 
       {/* cancel confirm sheet */}
       <Sheet open={confirmCancel} onClose={() => setConfirmCancel(false)}>

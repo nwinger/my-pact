@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -5,31 +6,41 @@ import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
 
 import { ScreenHeader } from '@/components/screen-header';
 import { Paper } from '@/components/ui/paper';
+import { Sheet } from '@/components/ui/sheet';
 import { Avatar } from '@/components/ui/avatar';
 import { CheckIcon, CloseIcon, MailIcon } from '@/components/ui/icons';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Body, BodyBold, BodySemi, Heading, Kicker, Small } from '@/components/ui/type';
 import { fonts, colors, radii, shadows } from '@/theme/tokens';
-import { useFriends, usePendingRequests, useStore } from '@/store/use-store';
+import { useFriends, useOutgoingRequests, usePendingRequests, useStore } from '@/store/use-store';
 
 export function FriendsScreen() {
   const insets = useSafeAreaInsets();
   const friends = useFriends();
   const pending = usePendingRequests();
+  const outgoing = useOutgoingRequests();
   const acceptFriend = useStore((s) => s.acceptFriend);
   const declineFriend = useStore((s) => s.declineFriend);
   const removeFriend = useStore((s) => s.removeFriend);
   const sendFriendRequest = useStore((s) => s.sendFriendRequest);
   const pacts = useStore((s) => s.pacts);
+  const blockFriend = useStore((s) => s.blockFriend);
   const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
+  const [feedback, setFeedback] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [declineTarget, setDeclineTarget] = useState<{ id: string; name: string } | null>(null);
 
   const send = () => {
     if (!email.includes('@')) return;
-    sendFriendRequest(email.trim());
-    setEmail('');
-    setSent(true);
-    setTimeout(() => setSent(false), 2400);
+    const result = sendFriendRequest(email.trim());
+    const messages: Record<string, { msg: string; ok: boolean }> = {
+      sent: { msg: 'Request sent — they’ll see it next time they open My Pact.', ok: true },
+      not_found: { msg: 'No one with that email here yet — in this demo, try mia@mypact.app.', ok: false },
+      duplicate: { msg: 'You already have a request or friendship with them.', ok: false },
+      self: { msg: 'You can’t witness yourself — that’s the whole point.', ok: false },
+    };
+    setFeedback(messages[result]);
+    if (result === 'sent') setEmail('');
+    setTimeout(() => setFeedback(null), 3200);
   };
 
   return (
@@ -95,9 +106,9 @@ export function FriendsScreen() {
             </BodySemi>
           </PressableScale>
         </View>
-        {sent && (
+        {feedback && (
           <Animated.View entering={FadeInDown.duration(250)} exiting={FadeOut}>
-            <Small color={colors.active}>Request sent — try mia@mypact.app and friends.</Small>
+            <Small color={feedback.ok ? colors.active : colors.failed}>{feedback.msg}</Small>
           </Animated.View>
         )}
       </Animated.View>
@@ -144,7 +155,7 @@ export function FriendsScreen() {
                 <CheckIcon size={18} color={colors.paper} strokeWidth={2.6} />
               </PressableScale>
               <PressableScale
-                onPress={() => declineFriend(friendship.id)}
+                onPress={() => setDeclineTarget({ id: friendship.id, name: user.username })}
                 accessibilityLabel={`Decline ${user.username}`}
                 style={{
                   width: 40,
@@ -200,6 +211,18 @@ export function FriendsScreen() {
                 </Small>
               </View>
               <PressableScale
+                onPress={() => router.push(`/create?keeper=${user.id}`)}
+                accessibilityLabel={`Make a pact with ${user.username}`}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 9,
+                  borderRadius: radii.pill,
+                  backgroundColor: colors.seal,
+                }}
+              >
+                <Small style={{ color: colors.white }}>Pact</Small>
+              </PressableScale>
+              <PressableScale
                 onPress={() => removeFriend(friendship.id)}
                 accessibilityLabel={`Remove ${user.username}`}
                 style={{
@@ -215,6 +238,34 @@ export function FriendsScreen() {
             </Animated.View>
           );
         })}
+        {outgoing.length > 0 && (
+          <View style={{ gap: 8, paddingTop: 6 }}>
+            <Kicker color={colors.ink50}>Awaiting reply</Kicker>
+            {outgoing.map(({ friendship, user }) => (
+              <View
+                key={friendship.id}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                  borderWidth: 1.4,
+                  borderStyle: 'dashed',
+                  borderColor: colors.line,
+                  borderRadius: radii.lg,
+                  padding: 12,
+                }}
+              >
+                <Avatar user={user} size={36} />
+                <View style={{ flex: 1 }}>
+                  <BodySemi>{user.username}</BodySemi>
+                  <Small color={colors.ink50}>hasn’t answered yet</Small>
+                </View>
+                <Small color={colors.overdue}>pending</Small>
+              </View>
+            ))}
+          </View>
+        )}
+
         {friends.length === 0 && (
           <View
             style={{
@@ -235,6 +286,51 @@ export function FriendsScreen() {
         )}
       </View>
     </ScrollView>
+
+      <Sheet open={declineTarget !== null} onClose={() => setDeclineTarget(null)}>
+        <View style={{ padding: 24, paddingBottom: 44, gap: 14 }}>
+          <Heading>Turn {declineTarget?.name} away?</Heading>
+          <Body color={colors.ink70}>
+            Declining lets them ask again later. Blocking is final — they can never
+            request you again.
+          </Body>
+          <PressableScale
+            onPress={() => {
+              if (declineTarget) declineFriend(declineTarget.id);
+              setDeclineTarget(null);
+            }}
+            style={{
+              borderWidth: 1.5,
+              borderColor: colors.ink,
+              borderRadius: radii.pill,
+              paddingVertical: 15,
+              alignItems: 'center',
+            }}
+          >
+            <BodySemi>Decline</BodySemi>
+          </PressableScale>
+          <PressableScale
+            onPress={() => {
+              if (declineTarget) blockFriend(declineTarget.id);
+              setDeclineTarget(null);
+            }}
+            style={{
+              backgroundColor: colors.failed,
+              borderRadius: radii.pill,
+              paddingVertical: 15,
+              alignItems: 'center',
+            }}
+          >
+            <BodyBold style={{ color: colors.white }}>Decline & block</BodyBold>
+          </PressableScale>
+          <PressableScale
+            onPress={() => setDeclineTarget(null)}
+            style={{ alignItems: 'center', paddingVertical: 6 }}
+          >
+            <Small color={colors.ink50}>Never mind</Small>
+          </PressableScale>
+        </View>
+      </Sheet>
     </Paper>
   );
 }

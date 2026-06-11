@@ -1,6 +1,6 @@
-/* eslint-disable react-hooks/immutability -- reanimated shared-value writes in event handlers are safe */
+ 
 import * as Haptics from 'expo-haptics';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Pressable, View } from 'react-native';
 import Animated, {
   Easing,
@@ -102,18 +102,35 @@ type Props = {
 
 /**
  * The check-in control: press to stamp the day with a wax seal.
- * Unsealed: dashed empty circle. Press: seal slams in with a spring,
- * particles burst, haptic thunks.
+ * Unsealed: dashed empty circle. The stamp animation is driven by the
+ * `done` prop (the recorded check-in), so the visual can never desync
+ * from the store — e.g. a goal pact only stamps once progress is logged.
  */
 export function SealButton({ done, onSeal, size = 54 }: Props) {
   const stamp = useSharedValue(done ? 1 : 0);
   const fire = useSharedValue(0);
   const wobble = useSharedValue(0);
+  const mountedRef = useRef(false);
 
   useEffect(() => {
-    // When seeded as done (history), settle without animating.
-    if (done && stamp.value === 0) stamp.value = 1;
-  }, [done, stamp]);
+    if (!mountedRef.current) {
+      // initial state settles without animating
+      mountedRef.current = true;
+      stamp.value = done ? 1 : 0;
+      return;
+    }
+    if (done) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      stamp.value = withSpring(1, { damping: 11, stiffness: 240, mass: 0.9 });
+      fire.value = 0;
+      fire.value = withDelay(
+        40,
+        withTiming(1, { duration: 520, easing: Easing.out(Easing.quad) })
+      );
+    } else {
+      stamp.value = withTiming(0, { duration: 220 });
+    }
+  }, [done, stamp, fire]);
 
   const sealStyle = useAnimatedStyle(() => ({
     opacity: stamp.value,
@@ -139,13 +156,7 @@ export function SealButton({ done, onSeal, size = 54 }: Props) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       return;
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    stamp.value = withSpring(1, { damping: 11, stiffness: 240, mass: 0.9 });
-    fire.value = 0;
-    fire.value = withDelay(
-      40,
-      withTiming(1, { duration: 520, easing: Easing.out(Easing.quad) })
-    );
+    // The stamp animates when `done` flips true via the store.
     onSeal();
   };
 

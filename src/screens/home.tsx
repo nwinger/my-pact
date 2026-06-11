@@ -1,11 +1,10 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { Paper } from '@/components/ui/paper';
-import { Sheet } from '@/components/ui/sheet';
 import { Avatar } from '@/components/ui/avatar';
 import { BellIcon, FlameIcon, QuillIcon } from '@/components/ui/icons';
 import { PressableScale } from '@/components/ui/pressable-scale';
@@ -21,78 +20,44 @@ import {
   Kicker,
   Small,
 } from '@/components/ui/type';
-import { greetingForNow, todayKey } from '@/lib/dates';
-import { currentStreak, hasCheckedInOn, isDueToday } from '@/lib/streaks';
+import { gracePeriodKey, greetingForNow, todayKey } from '@/lib/dates';
+import { currentStreak, hasAnyCheckInOn, hasCheckedInOn, isDueToday, isRequiredOn } from '@/lib/streaks';
+import { ConfettiBurst } from '@/components/ui/confetti';
+import { GoalLogSheet } from '@/components/goal-log-sheet';
 import { useMe, useStore, useUnreadCount, useUser } from '@/store/use-store';
 import { useTabs } from '@/store/use-tabs';
 import type { Pact } from '@/store/types';
 import { colors, radii, shadows, ticketTints } from '@/theme/tokens';
 
-function GoalLogSheet({
+function TodayRow({
   pact,
-  open,
-  onClose,
-  onLog,
+  index,
+  date,
+  graceLabel,
 }: {
-  pact: Pact | null;
-  open: boolean;
-  onClose: () => void;
-  onLog: (value: number) => void;
+  pact: Pact;
+  index: number;
+  /** defaults to today; the grace window passes yesterday */
+  date?: string;
+  graceLabel?: string;
 }) {
-  const options = useMemo(() => {
-    if (!pact?.goalTarget) return [1];
-    if (pact.goalUnit === 'books') return [1];
-    return [0.5, 1, 1.5, 2, 2.5, 3, 4, 5];
-  }, [pact]);
-
-  return (
-    <Sheet open={open} onClose={onClose}>
-      <View style={{ padding: 24, gap: 16, paddingBottom: 40 }}>
-        <Kicker color={colors.ink50}>Log progress</Kicker>
-        <Heading>{pact?.title}</Heading>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-          {options.map((v) => (
-            <PressableScale
-              key={v}
-              onPress={() => {
-                onLog(v);
-                onClose();
-              }}
-              style={{
-                borderWidth: 1.5,
-                borderColor: colors.ink,
-                borderRadius: radii.pill,
-                paddingHorizontal: 18,
-                paddingVertical: 12,
-                backgroundColor: colors.butterSoft,
-              }}
-            >
-              <BodyBold>
-                +{v} {pact?.goalUnit}
-              </BodyBold>
-            </PressableScale>
-          ))}
-        </View>
-      </View>
-    </Sheet>
-  );
-}
-
-function TodayRow({ pact, index }: { pact: Pact; index: number }) {
   const checkIns = useStore((s) => s.checkIns);
   const checkIn = useStore((s) => s.checkIn);
   const keeper = useUser(pact.keeperUserId);
   const tint = ticketTints[pact.tintIndex % ticketTints.length];
-  const done = hasCheckedInOn(checkIns, pact, todayKey());
+  const targetDate = date ?? todayKey();
+  const done = hasCheckedInOn(checkIns, pact, targetDate);
   const streak = currentStreak(pact, checkIns);
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const seal = () => {
+    // re-validate at press time: the grace window may have closed
+    if (targetDate !== todayKey() && targetDate !== gracePeriodKey()) return;
     if (pact.type === 'goal') {
       setSheetOpen(true);
       return;
     }
-    checkIn(pact.id);
+    checkIn(pact.id, { date: targetDate });
   };
 
   return (
@@ -100,6 +65,9 @@ function TodayRow({ pact, index }: { pact: Pact; index: number }) {
       <PressableScale
         scaleTo={0.98}
         onPress={() => router.push(`/pact/${pact.id}`)}
+        // contains the SealButton — must not render as a nested <button> on web
+        accessibilityRole={undefined}
+        accessibilityLabel={`Open ${pact.title}`}
         style={{
           flexDirection: 'row',
           alignItems: 'center',
@@ -125,9 +93,9 @@ function TodayRow({ pact, index }: { pact: Pact; index: number }) {
         <View style={{ flex: 1, gap: 3 }}>
           <Heading style={{ fontSize: 18, lineHeight: 22 }}>{pact.title}</Heading>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <QuillIcon size={13} color={colors.ink50} strokeWidth={2} />
-            <Small color={colors.ink50}>
-              {keeper?.username} is watching
+            <QuillIcon size={13} color={graceLabel ? colors.overdue : colors.ink50} strokeWidth={2} />
+            <Small color={graceLabel ? colors.overdue : colors.ink50}>
+              {graceLabel ?? `${keeper?.username} is watching`}
             </Small>
             {streak > 1 && (
               <>
@@ -145,7 +113,7 @@ function TodayRow({ pact, index }: { pact: Pact; index: number }) {
           pact={pact}
           open={sheetOpen}
           onClose={() => setSheetOpen(false)}
-          onLog={(v) => checkIn(pact.id, v)}
+          onLog={(v) => checkIn(pact.id, { progressValue: v, date: targetDate })}
         />
       )}
     </Animated.View>
@@ -166,6 +134,35 @@ export function HomeScreen() {
   );
   const doneCount = due.filter((p) => hasCheckedInOn(checkIns, p, todayKey())).length;
   const allDone = due.length > 0 && doneCount === due.length;
+
+  // 00:00–00:30: yesterday's unsealed required days are still open (grace period)
+  const graceKey = gracePeriodKey();
+  const grace = useMemo(() => {
+    if (!graceKey) return [];
+    return pacts.filter(
+      (p) =>
+        p.creatorUserId === me.id &&
+        p.status === 'active' &&
+        p.type === 'frequency' &&
+        graceKey >= p.startDate &&
+        graceKey <= p.endDate &&
+        isRequiredOn(p, graceKey) &&
+        !hasAnyCheckInOn(checkIns, p, graceKey)
+    );
+  }, [pacts, checkIns, me.id, graceKey]);
+
+  // confetti the moment the last seal of the day lands
+  const [celebrate, setCelebrate] = useState(false);
+  const prevAllDone = useRef(allDone);
+  useEffect(() => {
+    if (allDone && !prevAllDone.current) {
+      setCelebrate(true);
+      const t = setTimeout(() => setCelebrate(false), 1700);
+      prevAllDone.current = allDone;
+      return () => clearTimeout(t);
+    }
+    prevAllDone.current = allDone;
+  }, [allDone]);
 
   const bestStreak = useMemo(
     () =>
@@ -281,7 +278,26 @@ export function HomeScreen() {
             <Small style={{ color: 'rgba(247,241,230,0.55)', fontSize: 10.5 }}>day streak</Small>
           </View>
         </View>
+        {celebrate && <ConfettiBurst />}
       </Animated.View>
+
+      {/* grace period: yesterday is still open for 30 minutes */}
+      {grace.length > 0 && (
+        <View style={{ gap: 12 }}>
+          <Animated.View entering={FadeInDown.delay(200).duration(450)}>
+            <Heading color={colors.overdue}>Last call — grace period</Heading>
+          </Animated.View>
+          {grace.map((p, i) => (
+            <TodayRow
+              key={`grace-${p.id}`}
+              pact={p}
+              index={i}
+              date={graceKey!}
+              graceLabel="Yesterday · closes in minutes"
+            />
+          ))}
+        </View>
+      )}
 
       {/* due today */}
       <View style={{ gap: 12 }}>

@@ -7,7 +7,7 @@ import { ProgressRing } from '@/components/ui/progress-ring';
 import { Body, BodyBold, Heading, HeadingItalic, Kicker, Small } from '@/components/ui/type';
 import { StatusChip } from '@/components/ui/chip';
 import { currentStreak, goalProgress, progressRatio } from '@/lib/streaks';
-import { useStore, useUser } from '@/store/use-store';
+import { useMe, useStore, useUser } from '@/store/use-store';
 import type { Pact } from '@/store/types';
 import { colors, radii, shadows, ticketTints } from '@/theme/tokens';
 
@@ -20,7 +20,10 @@ const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
  */
 export function PactCard({ pact, index = 0 }: { pact: Pact; index?: number }) {
   const checkIns = useStore((s) => s.checkIns);
+  const me = useMe();
   const keeper = useUser(pact.keeperUserId);
+  const creator = useUser(pact.creatorUserId);
+  const iAmKeeper = pact.keeperUserId === me.id;
   const tint = ticketTints[pact.tintIndex % ticketTints.length];
   const ratio = progressRatio(pact, checkIns);
   const streak = currentStreak(pact, checkIns);
@@ -147,9 +150,9 @@ export function PactCard({ pact, index = 0 }: { pact: Pact; index?: number }) {
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5 }}>
-            <Small color={colors.ink50}>Witnessed by</Small>
+            <Small color={colors.ink50}>{iAmKeeper ? 'You witness' : 'Witnessed by'}</Small>
             <HeadingItalic style={{ fontSize: 16, lineHeight: 20 }}>
-              {keeper?.username ?? 'a friend'}
+              {(iAmKeeper ? creator?.username : keeper?.username) ?? 'a friend'}
             </HeadingItalic>
           </View>
           {pact.status !== 'active' && <StatusChip status={pact.status} />}

@@ -15,6 +15,7 @@ import {
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Body, BodyBold, BodySemi, Small } from '@/components/ui/type';
 import { useStore, useUnreadCount } from '@/store/use-store';
+import { useTabs } from '@/store/use-tabs';
 import type { AppNotification, NotificationType } from '@/store/types';
 import { colors, radii, shadows } from '@/theme/tokens';
 
@@ -31,6 +32,7 @@ const typeStyle: Record<
 
 function Row({ n, index }: { n: AppNotification; index: number }) {
   const markRead = useStore((s) => s.markRead);
+  const setTab = useTabs((s) => s.setTab);
   const { tint, Icon } = typeStyle[n.type];
   const unread = !n.readAt;
 
@@ -40,7 +42,12 @@ function Row({ n, index }: { n: AppNotification; index: number }) {
         scaleTo={0.98}
         onPress={() => {
           markRead(n.id);
-          if (n.pactId) router.push(`/pact/${n.pactId}`);
+          if (n.pactId) {
+            router.push(`/pact/${n.pactId}`);
+          } else if (n.friendId) {
+            setTab('friends');
+            router.back();
+          }
         }}
         style={{
           flexDirection: 'row',
@@ -82,7 +89,7 @@ function Row({ n, index }: { n: AppNotification; index: number }) {
           <Body color={colors.ink50} style={{ fontSize: 13.5, lineHeight: 18 }} numberOfLines={2}>
             {n.body}
           </Body>
-          <Small color={colors.ink30}>{n.sentAt}</Small>
+          <Small color={colors.ink50}>{n.sentAt}</Small>
         </View>
       </PressableScale>
     </Animated.View>

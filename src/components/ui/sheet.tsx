@@ -51,7 +51,7 @@ export function Sheet({ open, onClose, children }: Props) {
   return (
     <Modal transparent visible animationType="none" onRequestClose={onClose}>
       <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(34,28,20,0.45)' }, scrim]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Close" style={StyleSheet.absoluteFill} onPress={onClose} />
       </Animated.View>
       <Animated.View
         style={[

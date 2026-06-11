@@ -15,18 +15,30 @@ npx expo lint           # eslint (React Compiler rules enabled)
 ## What this is
 
 "My Pact" — a social habit-tracking Expo app (SDK 56, React 19, RN 0.85,
-expo-router, reanimated v4, zustand). The client is fully functional against
-an in-memory mock store (`src/store/use-store.ts` + `seed.ts`); there is no
-real backend yet.
+expo-router, reanimated v4, zustand). The client is feature-complete against
+persisted on-device stores; there is no real backend yet. Auth is mocked but
+flows through real session storage (expo-secure-store native, AsyncStorage
+web) and a `Stack.Protected` guard in `src/app/_layout.tsx`.
 
 ## Architecture notes
 
-- **Routes** (`src/app/`): root stack only — `index` (the tabbed main
-  surface), `create` (modal), `pact/[id]`, `inbox`. Tab switching is NOT done
+- **Routes** (`src/app/`): one auth-guarded stack — signed in: `index` (the
+  tabbed main surface), `create` (modal), `pact/[id]`, `inbox`, `settings`;
+  signed out: `welcome`, `login`, `register`. Tab switching is NOT done
   with a router tab navigator: expo-router/react-navigation tabs leave
   inactive scenes visible on web in this SDK combo. Instead `src/app/index.tsx`
   mounts all four scenes from `src/screens/` and toggles `display` based on
   the `useTabs` zustand store. Keep it that way.
+- **Persistence**: domain store (`use-store.ts`) persists via zustand
+  `persist` + AsyncStorage; auth (`use-auth.ts`) via secure storage. Gate UI
+  on `useHydrated()` (`src/lib/use-hydrated.ts`). In-memory flags
+  (`hydrated`, `reconciled`) are excluded by `partialize`. Entity ids embed
+  `Date.now()` — plain counters collide with persisted data after relaunch.
+- **Scheduler engine** (`src/lib/engine.ts`): on launch (signed in +
+  hydrated), `runReconcile()` records failed check-ins for missed required
+  days, emits breach/completion notifications, and settles expired pacts.
+  It mirrors the future backend cron jobs — keep its rules in sync with the
+  spec in README.
 - **Design tokens** live in `src/theme/tokens.ts` — colors (ink/paper/pastel
   tints), Fraunces + Quicksand font families, radii, shadows (as `boxShadow`
   strings, supported cross-platform on the new architecture). No hard-coded
@@ -42,6 +54,12 @@ real backend yet.
   rule locally with a comment explaining why. Follow the same pattern.
 - Every screen wraps itself in `<Paper>` (opaque textured background);
   screens must not rely on a parent background.
+
+## Gotchas
+
+- Metro's file watcher can silently miss edits (changes don't hot-reload AND
+  full reloads still serve a stale bundle). If a change doesn't appear in the
+  browser, restart the dev server with `--clear`.
 
 ## Verifying changes
 

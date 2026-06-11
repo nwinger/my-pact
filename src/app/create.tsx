@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,10 +17,12 @@ import {
   Small,
 } from '@/components/ui/type';
 import { useFriends, useStore } from '@/store/use-store';
+import { useTabs } from '@/store/use-tabs';
 import type { PactType } from '@/store/types';
 import { fonts, colors, radii, shadows } from '@/theme/tokens';
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const WEEKDAYS = [1, 2, 3, 4, 5];
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const DURATIONS = [
@@ -38,13 +40,19 @@ export default function CreatePact() {
   const insets = useSafeAreaInsets();
   const friends = useFriends();
   const createPact = useStore((s) => s.createPact);
+  const { keeper: keeperParam } = useLocalSearchParams<{ keeper?: string }>();
+  const setTab = useTabs((s) => s.setTab);
 
   const [title, setTitle] = useState('');
   const [type, setType] = useState<PactType>('frequency');
   const [days, setDays] = useState<number[]>(ALL_DAYS);
   const [goalTarget, setGoalTarget] = useState('30');
   const [goalUnit, setGoalUnit] = useState('km');
-  const [keeperId, setKeeperId] = useState<string | null>(friends[0]?.user.id ?? null);
+  const [keeperId, setKeeperId] = useState<string | null>(
+    (keeperParam && friends.some((f) => f.user.id === keeperParam) ? keeperParam : null) ??
+      friends[0]?.user.id ??
+      null
+  );
   const [isMutual, setIsMutual] = useState(false);
   const [duration, setDuration] = useState(30);
 
@@ -52,7 +60,7 @@ export default function CreatePact() {
     if (title.trim().length < 5) return false;
     if (!keeperId) return false;
     if (type === 'frequency' && days.length === 0) return false;
-    if (type === 'goal' && (!Number(goalTarget) || !goalUnit.trim())) return false;
+    if (type === 'goal' && (!(Number(goalTarget) > 0) || !goalUnit.trim())) return false;
     return true;
   }, [title, keeperId, type, days, goalTarget, goalUnit]);
 
@@ -186,6 +194,8 @@ export default function CreatePact() {
                       key={i}
                       onPress={() => toggleDay(i)}
                       scaleTo={0.85}
+                      accessibilityLabel={DAY_NAMES[i]}
+                      accessibilityState={{ selected: on }}
                       style={{
                         flex: 1,
                         aspectRatio: 1,
@@ -270,6 +280,38 @@ export default function CreatePact() {
         {/* keeper */}
         <Animated.View entering={FadeInDown.delay(260).duration(400)} style={{ gap: 10 }}>
           <FieldLabel>Witnessed by</FieldLabel>
+          {friends.length === 0 && (
+            <View
+              style={{
+                borderWidth: 1.5,
+                borderStyle: 'dashed',
+                borderColor: colors.line,
+                borderRadius: radii.lg,
+                padding: 22,
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <Body color={colors.ink50} align="center">
+                A pact needs a witness — invite a friend first.
+              </Body>
+              <PressableScale
+                onPress={() => {
+                  router.dismiss();
+                  setTab('friends');
+                }}
+                style={{
+                  borderWidth: 1.5,
+                  borderColor: colors.ink,
+                  borderRadius: radii.pill,
+                  paddingHorizontal: 18,
+                  paddingVertical: 11,
+                }}
+              >
+                <BodySemi>Find a witness</BodySemi>
+              </PressableScale>
+            </View>
+          )}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
             {friends.map(({ user }) => {
               const on = keeperId === user.id;
@@ -317,6 +359,8 @@ export default function CreatePact() {
           {/* mutual toggle */}
           <PressableScale
             onPress={() => setIsMutual((m) => !m)}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: isMutual }}
             style={{
               flexDirection: 'row',
               alignItems: 'center',
