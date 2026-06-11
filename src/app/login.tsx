@@ -8,6 +8,7 @@ import { AuthBackButton, AuthInput, SocialButtons } from '@/components/auth-bits
 import { Paper } from '@/components/ui/paper';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Body, BodyBold, BodySemi, Display, Kicker } from '@/components/ui/type';
+import { apiEnabled, errorMessage } from '@/lib/api';
 import { useAuth } from '@/store/use-auth';
 import { useStore } from '@/store/use-store';
 import { colors, radii, shadows } from '@/theme/tokens';
@@ -15,12 +16,15 @@ import { colors, radii, shadows } from '@/theme/tokens';
 export default function Login() {
   const insets = useSafeAreaInsets();
   const signIn = useAuth((s) => s.signIn);
+  const signInSocial = useAuth((s) => s.signInSocial);
   const updateProfile = useStore((s) => s.updateProfile);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
+    if (busy) return;
     if (!email.includes('@')) {
       setError('That email doesn’t look right.');
       return;
@@ -30,8 +34,34 @@ export default function Login() {
       return;
     }
     setError(null);
-    updateProfile({ email: email.trim().toLowerCase() });
-    signIn(email.trim().toLowerCase(), 'password');
+    setBusy(true);
+    try {
+      const profile = await signIn(email.trim().toLowerCase(), password);
+      if (profile) {
+        // sync the server profile into the local store
+        updateProfile({
+          username: profile.username,
+          email: profile.email,
+          timezone: profile.timezone,
+          notificationTime: profile.notificationTime,
+        });
+      } else {
+        // offline demo mode keeps its old behavior
+        updateProfile({ email: email.trim().toLowerCase() });
+      }
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const social = async (provider: 'google' | 'apple') => {
+    try {
+      await signInSocial(provider);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
   };
 
   return (
@@ -89,7 +119,7 @@ export default function Login() {
             <BodyBold style={{ color: colors.paper, fontSize: 16 }}>Sign in</BodyBold>
           </PressableScale>
 
-          <SocialButtons onSocial={(provider) => signIn('you@mypact.app', provider)} />
+          <SocialButtons onSocial={social} />
         </Animated.View>
 
         <Animated.View
@@ -103,7 +133,9 @@ export default function Login() {
         </Animated.View>
 
         <Body align="center" color={colors.ink30} style={{ fontSize: 12.5 }}>
-          Demo build — any email and password sign you in locally.
+          {apiEnabled
+            ? 'Sessions are sealed and stored securely.'
+            : 'Demo build — any email and password sign you in locally.'}
         </Body>
       </ScrollView>
     </Paper>

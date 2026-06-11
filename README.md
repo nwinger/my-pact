@@ -15,8 +15,10 @@ without touching the screens.
 
 - **Auth flow** — welcome → register/login (email+password, Google/Apple
   buttons), session persisted with expo-secure-store on device. Sign-out and
-  the auth guard (`Stack.Protected`) route accordingly. Auth is mocked
-  locally; swapping in Better Auth changes only the store actions.
+  the auth guard (`Stack.Protected`) route accordingly. With
+  `EXPO_PUBLIC_API_URL` set, email+password runs for real against the
+  backend (Better Auth, bearer sessions; Google/Apple are scaffolded behind
+  OAuth credentials); without it, auth is mocked offline.
 - **Pacts** — frequency (daily / chosen weekdays) and goal (target + unit)
   pacts, mutual pacts that create a linked twin where both sides check in,
   keeper selection from accepted friends, 21/30/60/90-day durations,
@@ -69,6 +71,16 @@ npx expo start          # iOS / Android via Expo Go or dev build
 npx expo start --web    # web preview
 ```
 
+With the backend (real login; see `docs/backend-setup.md`):
+
+```bash
+supabase start          # local Postgres — needs Docker/OrbStack
+npm run db:migrate
+npm run api             # Hono API on http://localhost:8787/api
+echo 'EXPO_PUBLIC_API_URL=http://localhost:8787' > .env
+npx expo start --web
+```
+
 ## Structure
 
 ```
@@ -78,8 +90,14 @@ src/
   screens/        the four tab scenes (home, pacts, friends, profile)
   components/     pact cards, tab bar, seal button, sheet, auth bits, ui/
   store/          zustand stores (domain + auth + tab) with persistence, seed data
-  lib/            date helpers, streak math, scheduler engine, reminders, hydration
+  lib/            date helpers, streak math, scheduler engine, reminders,
+                  hydration, api client (api.ts)
   theme/          design tokens (colors, fonts, radii, shadows)
+server/           Hono backend: Better Auth, drizzle schema, /users routes
+api/              Vercel Functions entry (catch-all → the Hono app)
+drizzle/          generated SQL migrations
+supabase/         local Supabase config (`supabase start`, ports 553xx)
+docs/             ADRs + backend setup guide (OAuth checklist, deploy)
 scripts/          app-icon generator
 ```
 
@@ -88,9 +106,13 @@ router tab navigator — all four scenes stay mounted with their scroll state,
 and inactive ones are `display: none`. This sidesteps an expo-router web issue
 where inactive tab scenes stay visible, and behaves identically on native.
 
-## What the real backend replaces
+## Backend status
 
-The spec's NestJS/Vercel + Drizzle/Supabase + Better Auth + FCM stack slots in
-behind the stores: auth actions call the API instead of minting mock tokens,
-store actions become React Query mutations, and `src/lib/engine.ts` retires in
-favor of the server-side cron schedulers it mirrors.
+The backend (Hono + Drizzle/Supabase + Better Auth on Vercel — see
+`docs/adr/0001-backend-stack.md`) now handles auth for real: registration,
+login, bearer sessions and `GET/PATCH /users/me`. The domain tables (pacts,
+check-ins, friendships, notifications) exist in the schema with the client's
+hardened rules; their endpoints are the next step, after which store actions
+become React Query mutations and `src/lib/engine.ts` retires in favor of
+server-side cron schedulers. Offline demo mode (no `EXPO_PUBLIC_API_URL`)
+keeps working throughout.

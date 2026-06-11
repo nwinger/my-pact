@@ -8,17 +8,24 @@ Guidance for Claude Code when working in this repository.
 npm install
 npx expo start --web    # web dev server (fastest way to verify changes)
 npx expo start          # native (Expo Go / dev build)
-npx tsc --noEmit        # typecheck
+npx tsc --noEmit        # typecheck (client + server)
 npx expo lint           # eslint (React Compiler rules enabled)
+
+supabase start          # local Postgres (ports 553xx — needs Docker/OrbStack)
+npm run db:migrate      # apply drizzle/ migrations
+npm run api             # Hono backend on http://localhost:8787/api
 ```
 
 ## What this is
 
 "My Pact" — a social habit-tracking Expo app (SDK 56, React 19, RN 0.85,
-expo-router, reanimated v4, zustand). The client is feature-complete against
-persisted on-device stores; there is no real backend yet. Auth is mocked but
-flows through real session storage (expo-secure-store native, AsyncStorage
-web) and a `Stack.Protected` guard in `src/app/_layout.tsx`.
+expo-router, reanimated v4, zustand) plus a Hono + Better Auth + Drizzle
+backend in `server/` (see `docs/adr/0001-backend-stack.md` and
+`docs/backend-setup.md`). **Auth is real** (email+password against Better
+Auth, bearer token in secure storage) when `EXPO_PUBLIC_API_URL` is set —
+put it in `.env`; without it the app runs in offline demo mode with mock
+sessions. Domain data (pacts, friends, check-ins) is still on-device; the
+session guard is `Stack.Protected` in `src/app/_layout.tsx`.
 
 ## Architecture notes
 

@@ -19,6 +19,7 @@ import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Paper } from '@/components/ui/paper';
+import { ApiError, apiEnabled, fetchMe } from '@/lib/api';
 import { syncDailyReminder } from '@/lib/reminders';
 import { useHydrated } from '@/lib/use-hydrated';
 import { useAuth } from '@/store/use-auth';
@@ -60,6 +61,26 @@ export default function RootLayout() {
     const me = users.find((u) => u.id === meId);
     if (me) void syncDailyReminder(remindersEnabled, me.notificationTime);
   }, [ready, signedIn, runReconcile]);
+
+  // In API mode, confirm the persisted session is still alive and pull the
+  // server profile into the local store; a revoked/expired token signs out.
+  useEffect(() => {
+    if (!ready || !signedIn || !apiEnabled) return;
+    const token = useAuth.getState().token;
+    if (!token) return;
+    fetchMe(token)
+      .then((p) =>
+        useStore.getState().updateProfile({
+          username: p.username,
+          email: p.email,
+          timezone: p.timezone,
+          notificationTime: p.notificationTime,
+        })
+      )
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 401) useAuth.getState().signOut();
+      });
+  }, [ready, signedIn]);
 
   // Day rollover while the app stays alive: re-run the scheduler pass on
   // foreground. runReconcile self-dedupes per (day, grace-window) stamp.

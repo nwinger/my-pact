@@ -8,6 +8,7 @@ import { AuthBackButton, AuthInput, SocialButtons } from '@/components/auth-bits
 import { Paper } from '@/components/ui/paper';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Body, BodyBold, BodySemi, Display, Kicker, Small } from '@/components/ui/type';
+import { apiEnabled, errorMessage } from '@/lib/api';
 import { useAuth } from '@/store/use-auth';
 import { useStore } from '@/store/use-store';
 import { colors, radii, shadows } from '@/theme/tokens';
@@ -22,14 +23,17 @@ function detectTimezone(): string {
 
 export default function Register() {
   const insets = useSafeAreaInsets();
-  const signIn = useAuth((s) => s.signIn);
+  const signUp = useAuth((s) => s.signUp);
+  const signInSocial = useAuth((s) => s.signInSocial);
   const updateProfile = useStore((s) => s.updateProfile);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
+    if (busy) return;
     if (username.trim().length < 3) {
       setError('Usernames are 3–50 characters.');
       return;
@@ -43,17 +47,44 @@ export default function Register() {
       return;
     }
     setError(null);
-    updateProfile({
-      username: username.trim().toLowerCase(),
-      email: email.trim().toLowerCase(),
-      timezone: detectTimezone(),
-    });
-    signIn(email.trim().toLowerCase(), 'password');
+    setBusy(true);
+    try {
+      const profile = await signUp({
+        username: username.trim().toLowerCase(),
+        email: email.trim().toLowerCase(),
+        password,
+        timezone: detectTimezone(),
+      });
+      // registration is server-side in API mode; sync the resulting profile
+      // (offline demo mode keeps writing the local values directly)
+      updateProfile(
+        profile
+          ? {
+              username: profile.username,
+              email: profile.email,
+              timezone: profile.timezone,
+              notificationTime: profile.notificationTime,
+            }
+          : {
+              username: username.trim().toLowerCase(),
+              email: email.trim().toLowerCase(),
+              timezone: detectTimezone(),
+            }
+      );
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const social = (provider: 'google' | 'apple') => {
-    updateProfile({ email: 'you@mypact.app', timezone: detectTimezone() });
-    signIn('you@mypact.app', provider);
+  const social = async (provider: 'google' | 'apple') => {
+    try {
+      await signInSocial(provider);
+      if (!apiEnabled) updateProfile({ email: 'you@mypact.app', timezone: detectTimezone() });
+    } catch (e) {
+      setError(errorMessage(e));
+    }
   };
 
   return (
@@ -139,7 +170,9 @@ export default function Register() {
         </Animated.View>
 
         <Body align="center" color={colors.ink30} style={{ fontSize: 12.5 }}>
-          Demo build — accounts live on this device only.
+          {apiEnabled
+            ? 'Your account is inscribed on the server.'
+            : 'Demo build — accounts live on this device only.'}
         </Body>
       </ScrollView>
     </Paper>
