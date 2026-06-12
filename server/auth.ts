@@ -1,3 +1,4 @@
+import { expo } from '@better-auth/expo';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
@@ -5,6 +6,9 @@ import { bearer } from 'better-auth/plugins/bearer';
 import { db } from './db';
 import * as schema from './db/schema';
 import { env } from './env';
+
+/** Must match the `scheme` in app.json — native clients identify with it. */
+const APP_SCHEME = 'mypact://';
 
 export const auth = betterAuth({
   baseURL: env.baseUrl,
@@ -43,11 +47,19 @@ export const auth = betterAuth({
         }
       : {}),
   },
-  trustedOrigins: env.corsOrigins,
+  trustedOrigins: [
+    ...env.corsOrigins,
+    APP_SCHEME,
+    // Expo Go / dev clients announce exp:// origins
+    ...(env.dev ? ['exp://', 'exp://**'] : []),
+  ],
+  // expo(): native fetch sends `Origin: null`, which the origin check
+  // rejects — the plugin trusts the app scheme sent in the `expo-origin`
+  // header instead (src/lib/api.ts sets it on native).
   // bearer(): sign-in responses carry a `set-auth-token` header; clients send
   // it back as `Authorization: Bearer …` — no cookies, which suits Expo
   // native + cross-origin web.
-  plugins: [bearer()],
+  plugins: [expo(), bearer()],
 });
 
 export type SessionUser = typeof auth.$Infer.Session.user;

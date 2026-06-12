@@ -3,7 +3,15 @@
  * unset the app runs in offline demo mode and none of this is called.
  */
 
+import { Platform } from 'react-native';
+
 const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/+$/, '') || null;
+
+// Native fetch sends `Origin: null`, which Better Auth's CSRF check rejects.
+// Its expo() server plugin trusts this header instead (must match app.json's
+// scheme and the server's APP_SCHEME).
+const ORIGIN_HEADERS: Record<string, string> =
+  Platform.OS === 'web' ? {} : { 'expo-origin': 'mypact://' };
 
 /** false = offline demo mode (mock auth, seeded data). */
 export const apiEnabled = API_URL !== null;
@@ -67,6 +75,7 @@ async function call<T>(
     res = await fetch(`${API_URL}/api${path}`, {
       method: opts.method ?? 'GET',
       headers: {
+        ...ORIGIN_HEADERS,
         ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
       },

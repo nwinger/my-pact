@@ -28,7 +28,15 @@ app.use(
 app.get('/health', (c) => c.json({ ok: true }));
 
 // Better Auth owns /api/auth/* (its default basePath).
-app.on(['POST', 'GET'], '/auth/*', (c) => auth.handler(c.req.raw));
+app.on(['POST', 'GET'], '/auth/*', (c) => {
+  // Expo's native fetch sends the literal `Origin: null`, which Better Auth
+  // rejects before its expo plugin can substitute the `expo-origin` scheme.
+  // Drop it — a null origin carries no CSRF signal (native apps don't have
+  // one), and browser clients always send a real origin that stays checked.
+  const headers = c.req.raw.headers;
+  if (headers.get('origin') === 'null') headers.delete('origin');
+  return auth.handler(c.req.raw);
+});
 
 // Resolve the session (cookie or bearer) for everything else.
 app.use('*', async (c, next) => {
