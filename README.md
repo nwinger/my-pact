@@ -40,8 +40,9 @@ without touching the screens.
 - **Notifications** — all five spec types in the inbox with unread badges and
   deep links; a daily local reminder fires at the user's notification time
   (expo-notifications; remote push via FCM arrives with the real backend).
-- **Settings** — username, notification time, timezone, reminder toggle,
-  demo-data reset, sign out.
+- **Settings** — username, notification time, reminder toggle, demo-data
+  reset (demo build only), sign out. The timezone follows the device
+  automatically and is kept in sync with the server.
 - **Persistence** — domain data in AsyncStorage, auth in secure storage;
   check-ins and streaks survive restarts. "Reset demo data" reseeds.
 

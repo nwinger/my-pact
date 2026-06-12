@@ -9,17 +9,10 @@ import { Paper } from '@/components/ui/paper';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Body, BodyBold, BodySemi, Display, Kicker, Small } from '@/components/ui/type';
 import { apiEnabled, errorMessage } from '@/lib/api';
+import { detectTimezone } from '@/lib/dates';
 import { useAuth } from '@/store/use-auth';
 import { useStore } from '@/store/use-store';
 import { colors, radii, shadows } from '@/theme/tokens';
-
-function detectTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'Europe/Oslo';
-  } catch {
-    return 'Europe/Oslo';
-  }
-}
 
 export default function Register() {
   const insets = useSafeAreaInsets();

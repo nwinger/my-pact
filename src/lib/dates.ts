@@ -1,5 +1,14 @@
 /** Date helpers. All keys are local-date strings "YYYY-MM-DD". */
 
+/** IANA timezone of the device — the source of truth for the profile. */
+export function detectTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
 export function toKey(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');

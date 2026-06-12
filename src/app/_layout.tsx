@@ -19,7 +19,8 @@ import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Paper } from '@/components/ui/paper';
-import { ApiError, apiEnabled, fetchMe } from '@/lib/api';
+import { ApiError, apiEnabled, fetchMe, updateMe } from '@/lib/api';
+import { detectTimezone } from '@/lib/dates';
 import { syncDailyReminder } from '@/lib/reminders';
 import { useHydrated } from '@/lib/use-hydrated';
 import { useAuth } from '@/store/use-auth';
@@ -54,12 +55,16 @@ export default function RootLayout() {
 
   // Once signed in with data on board: run the local "scheduler" pass
   // (missed days, breaches, completions) and sync the daily reminder.
+  // The device clock owns the timezone — there is no manual picker.
   useEffect(() => {
     if (!ready || !signedIn) return;
     runReconcile();
     const { users, meId, remindersEnabled } = useStore.getState();
     const me = users.find((u) => u.id === meId);
-    if (me) void syncDailyReminder(remindersEnabled, me.notificationTime);
+    if (!me) return;
+    void syncDailyReminder(remindersEnabled, me.notificationTime);
+    const timezone = detectTimezone();
+    if (me.timezone !== timezone) useStore.getState().updateProfile({ timezone });
   }, [ready, signedIn, runReconcile]);
 
   // In API mode, confirm the persisted session is still alive and pull the
@@ -70,14 +75,19 @@ export default function RootLayout() {
     if (!token) return;
     fetchMe(token)
       .then((p) => {
+        // the device clock owns the timezone, not the server's stored copy
+        const timezone = detectTimezone();
         useStore.getState().updateProfile({
           username: p.username,
           email: p.email,
-          timezone: p.timezone,
+          timezone,
           notificationTime: p.notificationTime,
         });
         // the reminder may have been scheduled from the pre-sync defaults
         void syncDailyReminder(useStore.getState().remindersEnabled, p.notificationTime);
+        if (p.timezone !== timezone) {
+          void updateMe(token, { timezone }).catch(() => {});
+        }
       })
       .catch((e) => {
         if (e instanceof ApiError && e.status === 401) useAuth.getState().signOut();

@@ -18,26 +18,6 @@ import { colors, fonts, radii, shadows } from '@/theme/tokens';
 
 const TIMES = ['06:00', '06:30', '07:00', '07:30', '08:00', '08:30', '09:00', '12:00', '18:00', '20:00', '21:00'];
 
-const ZONES = [
-  'Europe/Oslo',
-  'Europe/Stockholm',
-  'Europe/Copenhagen',
-  'Europe/London',
-  'Europe/Berlin',
-  'America/New_York',
-  'America/Los_Angeles',
-  'Asia/Tokyo',
-  'Australia/Sydney',
-];
-
-function detectTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'Europe/Oslo';
-  } catch {
-    return 'Europe/Oslo';
-  }
-}
-
 function Section({ title, children, delay = 0 }: { title: string; children: React.ReactNode; delay?: number }) {
   return (
     <Animated.View entering={FadeInDown.delay(delay).duration(420)} style={{ gap: 10 }}>
@@ -60,15 +40,9 @@ export default function Settings() {
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
 
-  const zones = [detectTimezone(), ...ZONES.filter((z) => z !== detectTimezone())];
-
   // In API mode, mirror profile edits to the server — otherwise the launch
   // sync (fetchMe in _layout) reverts them on the next start.
-  const syncProfileToServer = (patch: {
-    username?: string;
-    timezone?: string;
-    notificationTime?: string;
-  }) => {
+  const syncProfileToServer = (patch: { username?: string; notificationTime?: string }) => {
     if (!apiEnabled) return;
     const token = useAuth.getState().token;
     if (token) void updateMe(token, patch).catch(() => {});
@@ -217,56 +191,30 @@ export default function Settings() {
               );
             })}
           </View>
-        </Section>
-
-        <Section title="Timezone" delay={220}>
           <Small color={colors.ink50}>
-            Deadlines close at midnight, plus a 30-minute grace period. Note:
-            until the server schedulers land, deadlines follow your device clock.
+            Your timezone ({me.timezone}) follows your device automatically. Deadlines
+            close at midnight, plus a 30-minute grace period.
           </Small>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {zones.map((z) => {
-              const on = me.timezone === z;
-              return (
-                <PressableScale
-                  key={z}
-                  onPress={() => {
-                    updateProfile({ timezone: z });
-                    syncProfileToServer({ timezone: z });
-                  }}
-                  style={{
-                    paddingHorizontal: 14,
-                    paddingVertical: 9,
-                    borderRadius: radii.pill,
-                    backgroundColor: on ? colors.ink : 'transparent',
-                    borderWidth: 1.4,
-                    borderColor: on ? colors.ink : colors.line,
-                  }}
-                >
-                  <BodySemi color={on ? colors.paper : colors.ink50} style={{ fontSize: 13 }}>
-                    {z.split('/')[1]?.replace('_', ' ') ?? z}
-                  </BodySemi>
-                </PressableScale>
-              );
-            })}
-          </View>
         </Section>
 
-        <Section title="Danger zone" delay={280}>
-          <PressableScale
-            onPress={() => setConfirmReset(true)}
-            style={{
-              borderWidth: 1.5,
-              borderColor: colors.ink,
-              backgroundColor: colors.card,
-              borderRadius: radii.pill,
-              paddingVertical: 14,
-              alignItems: 'center',
-              boxShadow: shadows.card,
-            }}
-          >
-            <BodySemi>{apiEnabled ? 'Clear local data' : 'Reset demo data'}</BodySemi>
-          </PressableScale>
+        <Section title="Danger zone" delay={220}>
+          {/* demo only: API-mode accounts have nothing to reseed */}
+          {!apiEnabled && (
+            <PressableScale
+              onPress={() => setConfirmReset(true)}
+              style={{
+                borderWidth: 1.5,
+                borderColor: colors.ink,
+                backgroundColor: colors.card,
+                borderRadius: radii.pill,
+                paddingVertical: 14,
+                alignItems: 'center',
+                boxShadow: shadows.card,
+              }}
+            >
+              <BodySemi>Reset demo data</BodySemi>
+            </PressableScale>
+          )}
           <PressableScale
             onPress={() => {
               void syncDailyReminder(false, me.notificationTime);
@@ -295,23 +243,12 @@ export default function Settings() {
         <View style={{ padding: 24, paddingBottom: 44, gap: 14 }}>
           <Heading>Reset everything?</Heading>
           <Body color={colors.ink70}>
-            {apiEnabled
-              ? 'Pacts, check-ins, friends and notifications on this device are erased. This cannot be undone.'
-              : 'Pacts, check-ins, friends and notifications return to the demo seed. This cannot be undone.'}
+            Pacts, check-ins, friends and notifications return to the demo seed. This
+            cannot be undone.
           </Body>
           <PressableScale
             onPress={() => {
               resetLocal();
-              // only domain data is cleared — the signed-in account keeps
-              // its profile (the bare state would show '@you' until relaunch)
-              if (apiEnabled) {
-                updateProfile({
-                  username: me.username,
-                  email: me.email,
-                  timezone: me.timezone,
-                  notificationTime: me.notificationTime,
-                });
-              }
               setConfirmReset(false);
               router.back();
             }}
