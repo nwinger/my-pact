@@ -10,6 +10,7 @@ import { Paper } from '@/components/ui/paper';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Sheet } from '@/components/ui/sheet';
 import { Body, BodyBold, BodySemi, Heading, Kicker, Small } from '@/components/ui/type';
+import { apiEnabled, updateMe } from '@/lib/api';
 import { syncDailyReminder } from '@/lib/reminders';
 import { useAuth } from '@/store/use-auth';
 import { useMe, useStore } from '@/store/use-store';
@@ -52,7 +53,7 @@ export default function Settings() {
   const updateProfile = useStore((s) => s.updateProfile);
   const remindersEnabled = useStore((s) => s.remindersEnabled);
   const setRemindersEnabled = useStore((s) => s.setRemindersEnabled);
-  const resetDemo = useStore((s) => s.resetDemo);
+  const resetLocal = useStore((s) => s.resetLocal);
   const signOut = useAuth((s) => s.signOut);
 
   const [username, setUsername] = useState(me.username);
@@ -61,11 +62,24 @@ export default function Settings() {
 
   const zones = [detectTimezone(), ...ZONES.filter((z) => z !== detectTimezone())];
 
+  // In API mode, mirror profile edits to the server — otherwise the launch
+  // sync (fetchMe in _layout) reverts them on the next start.
+  const syncProfileToServer = (patch: {
+    username?: string;
+    timezone?: string;
+    notificationTime?: string;
+  }) => {
+    if (!apiEnabled) return;
+    const token = useAuth.getState().token;
+    if (token) void updateMe(token, patch).catch(() => {});
+  };
+
   const saveUsername = () => {
     const clean = username.trim().toLowerCase();
     if (clean.length >= 3 && clean.length <= 50) {
       setUsernameError(null);
       updateProfile({ username: clean });
+      syncProfileToServer({ username: clean });
       setUsername(clean);
     } else {
       setUsernameError('Usernames are 3–50 characters.');
@@ -74,6 +88,7 @@ export default function Settings() {
 
   const pickTime = (time: string) => {
     updateProfile({ notificationTime: time });
+    syncProfileToServer({ notificationTime: time });
     void syncDailyReminder(remindersEnabled, time);
   };
 
@@ -206,8 +221,8 @@ export default function Settings() {
 
         <Section title="Timezone" delay={220}>
           <Small color={colors.ink50}>
-            Deadlines close at midnight, plus a 30-minute grace period. Demo note:
-            until the backend lands, deadlines follow your device clock.
+            Deadlines close at midnight, plus a 30-minute grace period. Note:
+            until the server schedulers land, deadlines follow your device clock.
           </Small>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {zones.map((z) => {
@@ -215,7 +230,10 @@ export default function Settings() {
               return (
                 <PressableScale
                   key={z}
-                  onPress={() => updateProfile({ timezone: z })}
+                  onPress={() => {
+                    updateProfile({ timezone: z });
+                    syncProfileToServer({ timezone: z });
+                  }}
                   style={{
                     paddingHorizontal: 14,
                     paddingVertical: 9,
@@ -247,7 +265,7 @@ export default function Settings() {
               boxShadow: shadows.card,
             }}
           >
-            <BodySemi>Reset demo data</BodySemi>
+            <BodySemi>{apiEnabled ? 'Clear local data' : 'Reset demo data'}</BodySemi>
           </PressableScale>
           <PressableScale
             onPress={() => {
@@ -267,7 +285,9 @@ export default function Settings() {
         </Section>
 
         <Body color={colors.ink30} align="center" style={{ fontSize: 12.5 }}>
-          My Pact · demo build · data lives on this device
+          {apiEnabled
+            ? 'My Pact · pacts live on this device until the server learns them'
+            : 'My Pact · demo build · data lives on this device'}
         </Body>
       </ScrollView>
 
@@ -275,12 +295,23 @@ export default function Settings() {
         <View style={{ padding: 24, paddingBottom: 44, gap: 14 }}>
           <Heading>Reset everything?</Heading>
           <Body color={colors.ink70}>
-            Pacts, check-ins, friends and notifications return to the demo seed. This
-            cannot be undone.
+            {apiEnabled
+              ? 'Pacts, check-ins, friends and notifications on this device are erased. This cannot be undone.'
+              : 'Pacts, check-ins, friends and notifications return to the demo seed. This cannot be undone.'}
           </Body>
           <PressableScale
             onPress={() => {
-              resetDemo();
+              resetLocal();
+              // only domain data is cleared — the signed-in account keeps
+              // its profile (the bare state would show '@you' until relaunch)
+              if (apiEnabled) {
+                updateProfile({
+                  username: me.username,
+                  email: me.email,
+                  timezone: me.timezone,
+                  notificationTime: me.notificationTime,
+                });
+              }
               setConfirmReset(false);
               router.back();
             }}

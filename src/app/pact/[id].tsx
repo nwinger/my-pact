@@ -68,7 +68,34 @@ export default function PactDetail() {
     [checkIns, pact?.id]
   );
 
-  if (!pact) return null;
+  // reachable via stale deep links / notifications after a reset or sign-out
+  if (!pact) {
+    return (
+      <Paper>
+        <View
+          style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 26 }}
+        >
+          <Heading>Pact not found</Heading>
+          <Body color={colors.ink70} align="center">
+            This pact is no longer on the books.
+          </Body>
+          <PressableScale
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+            style={{
+              marginTop: 10,
+              borderWidth: 1.5,
+              borderColor: colors.ink,
+              borderRadius: radii.pill,
+              paddingHorizontal: 24,
+              paddingVertical: 13,
+            }}
+          >
+            <BodySemi>Back to the shelf</BodySemi>
+          </PressableScale>
+        </View>
+      </Paper>
+    );
+  }
 
   const iAmCreator = pact.creatorUserId === me.id;
 

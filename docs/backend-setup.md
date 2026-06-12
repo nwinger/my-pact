@@ -97,8 +97,8 @@ client). The scaffold keeps the UI in place; wire the buttons to
 ## Not wired yet (next sessions)
 
 - Pacts / check-ins / friends / notifications endpoints (the domain tables
-  and rules already exist in `server/db/schema.ts`).
-- Settings-screen profile edits still persist locally only; wire them to
-  `PATCH /api/users/me`.
+  and rules already exist in `server/db/schema.ts`). Until friends lookup
+  lands, API mode cannot add witnesses, so pact creation is intentionally
+  gated with explanatory copy.
 - Server cron schedulers to replace `src/lib/engine.ts` (Vercel cron →
   Hono routes), then remote push via FCM.

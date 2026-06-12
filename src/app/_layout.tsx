@@ -69,14 +69,16 @@ export default function RootLayout() {
     const token = useAuth.getState().token;
     if (!token) return;
     fetchMe(token)
-      .then((p) =>
+      .then((p) => {
         useStore.getState().updateProfile({
           username: p.username,
           email: p.email,
           timezone: p.timezone,
           notificationTime: p.notificationTime,
-        })
-      )
+        });
+        // the reminder may have been scheduled from the pre-sync defaults
+        void syncDailyReminder(useStore.getState().remindersEnabled, p.notificationTime);
+      })
       .catch((e) => {
         if (e instanceof ApiError && e.status === 401) useAuth.getState().signOut();
       });

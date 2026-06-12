@@ -12,6 +12,7 @@ import {
   signUpEmail,
   type ApiProfile,
 } from '@/lib/api';
+import { useStore } from '@/store/use-store';
 
 /**
  * Auth session, stored in expo-secure-store on device and localStorage (via
@@ -95,7 +96,7 @@ export const useAuth = create<AuthState>()(
         }
         const label = provider === 'google' ? 'Google' : 'Apple';
         throw new ApiError(
-          `${label} sign-in isn’t configured yet — see docs/backend-setup.md.`,
+          `${label} sign-in isn’t available yet — use your email and password instead.`,
           501
         );
       },
@@ -104,6 +105,9 @@ export const useAuth = create<AuthState>()(
         const { token } = get();
         // best-effort server-side revocation; local state clears regardless
         if (apiEnabled && token) void signOutSession(token).catch(() => {});
+        // with real accounts, local domain data is account-scoped — clear it
+        // so the next sign-in doesn't inherit this account's pacts
+        if (apiEnabled) useStore.getState().resetLocal();
         set({ signedIn: false, email: null, provider: null, token: null });
       },
 

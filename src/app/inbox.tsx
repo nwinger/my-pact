@@ -132,7 +132,7 @@ export default function Inbox() {
       </PressableScale>
 
       <ScreenHeader
-        kicker={unread > 0 ? `${unread} unread` : 'All read'}
+        kicker={unread > 0 ? `${unread} unread` : notifications.length > 0 ? 'All read' : 'Nothing yet'}
         title="Inbox"
         right={
           unread > 0 ? (

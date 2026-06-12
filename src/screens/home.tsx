@@ -258,9 +258,11 @@ export function HomeScreen() {
             <HeadingItalic style={{ color: colors.paper, fontSize: 22 }}>
               {allDone
                 ? 'Every seal pressed. Beautiful.'
-                : due.length === 0
-                  ? 'A rest day. Breathe.'
-                  : `${doneCount} of ${due.length} seals pressed`}
+                : pacts.every((p) => p.creatorUserId !== me.id)
+                  ? 'No pacts yet. Make your first.'
+                  : due.length === 0
+                    ? 'A rest day. Breathe.'
+                    : `${doneCount} of ${due.length} seals pressed`}
             </HeadingItalic>
           </View>
           <View

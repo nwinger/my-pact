@@ -3,11 +3,13 @@ import { useMemo } from 'react';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { apiEnabled } from '@/lib/api';
 import { gracePeriodKey, todayKey } from '@/lib/dates';
 import { reconcile } from '@/lib/engine';
 import { goalProgress } from '@/lib/streaks';
 import {
   ME,
+  buildBareState,
   buildSeedCheckIns,
   buildSeedFriendships,
   buildSeedKeeperPacts,
@@ -76,10 +78,20 @@ type State = {
   updateProfile: (update: ProfileUpdate) => void;
   setRemindersEnabled: (on: boolean) => void;
   runReconcile: () => void;
-  resetDemo: () => void;
+  resetLocal: () => void;
 };
 
-function freshSeed() {
+// Persisted alongside the data so a build that switches between demo and
+// API mode never inherits the other mode's dataset (see `merge` below).
+const DATA_MODE = apiEnabled ? 'api' : 'demo';
+
+// Demo mode seeds the full showcase dataset. API mode starts bare — the
+// server profile fills `me` on sign-in and the domain stays empty until its
+// endpoints land.
+function freshState() {
+  if (apiEnabled) {
+    return { ...buildBareState(), remindersEnabled: true };
+  }
   return {
     users: seedUsers,
     friendships: buildSeedFriendships(),
@@ -94,7 +106,7 @@ export const useStore = create<State>()(
   persist(
     (set, get) => ({
       meId: ME,
-      ...freshSeed(),
+      ...freshState(),
       lastReconcileStamp: null,
 
       checkIn: (pactId, opts) => {
@@ -348,13 +360,15 @@ export const useStore = create<State>()(
         });
       },
 
-      resetDemo: () => set({ ...freshSeed(), lastReconcileStamp: null }),
+      resetLocal: () => set({ ...freshState(), lastReconcileStamp: null }),
     }),
     {
       name: 'mypact-data',
-      version: 2,
+      // v3: API mode starts bare instead of demo-seeded
+      version: 3,
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({
+        dataMode: DATA_MODE,
         meId: s.meId,
         users: s.users,
         friendships: s.friendships,
@@ -363,7 +377,22 @@ export const useStore = create<State>()(
         notifications: s.notifications,
         remindersEnabled: s.remindersEnabled,
       }),
-      migrate: () => ({ ...freshSeed(), meId: ME }) as never,
+      // Same persist version, different mode: discard the other mode's data
+      // (pre-v3 stores carried no marker and were always demo-seeded).
+      merge: (persisted, current) => {
+        const p = persisted as (Partial<State> & { dataMode?: string }) | null;
+        if (p && (p.dataMode ?? 'demo') !== DATA_MODE) {
+          return { ...current, ...freshState(), meId: ME };
+        }
+        return { ...current, ...p };
+      },
+      migrate: (persisted, version) => {
+        // API mode always restarts bare and account-scoped
+        if (apiEnabled) return { ...freshState(), meId: ME } as never;
+        // demo: the v2 shape is identical to v3 — keep the user's data
+        if (version === 2 && persisted) return persisted as never;
+        return { ...freshState(), meId: ME } as never;
+      },
     }
   )
 );

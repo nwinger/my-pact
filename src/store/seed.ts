@@ -4,6 +4,29 @@ import type { AppNotification, CheckIn, Friendship, Pact, User } from '@/store/t
 export const ME = 'u-me';
 
 /**
+ * API mode starts bare: just me (the server profile overwrites this on
+ * sign-in), no demo pacts/friends/notifications. The domain stays local
+ * until its server endpoints land, but it's the account's own data.
+ */
+export function buildBareState(): {
+  users: User[];
+  friendships: Friendship[];
+  pacts: Pact[];
+  checkIns: CheckIn[];
+  notifications: AppNotification[];
+} {
+  return {
+    users: [
+      { id: ME, username: 'you', email: '', timezone: 'UTC', notificationTime: '08:00', tintIndex: 1 },
+    ],
+    friendships: [],
+    pacts: [],
+    checkIns: [],
+    notifications: [],
+  };
+}
+
+/**
  * All seed builders are factories: dates are relative to "now", so they
  * must be computed when the seed is actually installed (first launch or
  * demo reset) — never at module load time.

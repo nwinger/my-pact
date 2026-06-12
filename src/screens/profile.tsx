@@ -67,9 +67,10 @@ export function ProfileScreen() {
       (c) => c.userId === me.id && c.status === 'completed'
     ).length;
     const failed = checkIns.filter((c) => c.userId === me.id && c.status === 'failed').length;
+    // null = no activity yet (rendered as a dash, not a perfect score)
     const successRate =
       totalCheckIns + failed === 0
-        ? 100
+        ? null
         : Math.round((totalCheckIns / (totalCheckIns + failed)) * 100);
     const best = Math.max(
       0,
@@ -154,7 +155,12 @@ export function ProfileScreen() {
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
         <StatTile index={0} label="Current streak" value={stats.best} tint={colors.butterSoft} flame />
         <StatTile index={1} label="Longest streak" value={stats.longest} tint={colors.mintSoft} />
-        <StatTile index={2} label="Success rate" value={`${stats.successRate}%`} tint={colors.periwinkleSoft} />
+        <StatTile
+          index={2}
+          label="Success rate"
+          value={stats.successRate === null ? '—' : `${stats.successRate}%`}
+          tint={colors.periwinkleSoft}
+        />
         <StatTile index={3} label="Seals pressed" value={stats.totalCheckIns} tint={colors.blushSoft} />
         <StatTile index={4} label="Pacts made" value={stats.pactsMade} tint={colors.butterSoft} />
         <StatTile index={5} label="Keeping watch" value={stats.keeping} tint={colors.claySoft} />

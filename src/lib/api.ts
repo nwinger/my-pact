@@ -136,3 +136,11 @@ export async function fetchMe(token: string): Promise<ApiProfile> {
   const { data } = await call<ApiProfile>('/users/me', { token });
   return data;
 }
+
+export async function updateMe(
+  token: string,
+  patch: Partial<Pick<ApiProfile, 'username' | 'timezone' | 'notificationTime'>>
+): Promise<ApiProfile> {
+  const { data } = await call<ApiProfile>('/users/me', { method: 'PATCH', token, body: patch });
+  return data;
+}

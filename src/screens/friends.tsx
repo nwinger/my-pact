@@ -11,6 +11,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { CheckIcon, CloseIcon, MailIcon } from '@/components/ui/icons';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Body, BodyBold, BodySemi, Heading, Kicker, Small } from '@/components/ui/type';
+import { apiEnabled } from '@/lib/api';
 import { fonts, colors, radii, shadows } from '@/theme/tokens';
 import { useFriends, useOutgoingRequests, usePendingRequests, useStore } from '@/store/use-store';
 
@@ -34,7 +35,12 @@ export function FriendsScreen() {
     const result = sendFriendRequest(email.trim());
     const messages: Record<string, { msg: string; ok: boolean }> = {
       sent: { msg: 'Request sent — they’ll see it next time they open My Pact.', ok: true },
-      not_found: { msg: 'No one with that email here yet — in this demo, try mia@mypact.app.', ok: false },
+      not_found: {
+        msg: apiEnabled
+          ? 'No one with that email here yet — friend lookup arrives with the server sync.'
+          : 'No one with that email here yet — in this demo, try mia@mypact.app.',
+        ok: false,
+      },
       duplicate: { msg: 'You already have a request or friendship with them.', ok: false },
       self: { msg: 'You can’t witness yourself — that’s the whole point.', ok: false },
     };
@@ -280,7 +286,9 @@ export function FriendsScreen() {
           >
             <Heading color={colors.ink50}>No witnesses yet</Heading>
             <Body color={colors.ink50} align="center">
-              A pact needs two names. Invite someone above.
+              {apiEnabled
+                ? 'Friend lookup arrives with the server sync. Your witnesses will appear here.'
+                : 'A pact needs two names. Invite someone above.'}
             </Body>
           </View>
         )}
