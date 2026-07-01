@@ -73,3 +73,23 @@ session guard is `Stack.Protected` in `src/app/_layout.tsx`.
 Run the web server and check at a mobile viewport (~375×812). The welcome
 overlay appears first — the "Sign me up" button dismisses it. Check-ins reset
 on reload (mock store is in-memory).
+
+## Agent skills
+
+Per-repo configuration for the engineering skills. Details in `docs/agents/`.
+
+### Issue tracker
+
+Issues live in this repo's GitHub Issues, managed with the `gh` CLI. External
+PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles map 1:1 to their default label strings
+(`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`,
+`wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` plus `docs/adr/` at the repo root. See
+`docs/agents/domain.md`.
