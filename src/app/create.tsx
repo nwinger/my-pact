@@ -16,7 +16,6 @@ import {
   Kicker,
   Small,
 } from '@/components/ui/type';
-import { apiEnabled } from '@/lib/api';
 import { useFriends, useStore } from '@/store/use-store';
 import { useTabs } from '@/store/use-tabs';
 import type { PactType } from '@/store/types';
@@ -294,27 +293,23 @@ export default function CreatePact() {
               }}
             >
               <Body color={colors.ink50} align="center">
-                {apiEnabled
-                  ? 'A pact needs a witness, and friend invites arrive with the server sync — pacts can’t be drafted just yet.'
-                  : 'A pact needs a witness — invite a friend first.'}
+                A pact needs a witness — invite one on the Friends tab first.
               </Body>
-              {!apiEnabled && (
-                <PressableScale
-                  onPress={() => {
-                    router.dismiss();
-                    setTab('friends');
-                  }}
-                  style={{
-                    borderWidth: 1.5,
-                    borderColor: colors.ink,
-                    borderRadius: radii.pill,
-                    paddingHorizontal: 18,
-                    paddingVertical: 11,
-                  }}
-                >
-                  <BodySemi>Find a witness</BodySemi>
-                </PressableScale>
-              )}
+              <PressableScale
+                onPress={() => {
+                  router.dismiss();
+                  setTab('friends');
+                }}
+                style={{
+                  borderWidth: 1.5,
+                  borderColor: colors.ink,
+                  borderRadius: radii.pill,
+                  paddingHorizontal: 18,
+                  paddingVertical: 11,
+                }}
+              >
+                <BodySemi>Find a witness</BodySemi>
+              </PressableScale>
             </View>
           )}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>

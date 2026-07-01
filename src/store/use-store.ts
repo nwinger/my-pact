@@ -3,7 +3,16 @@ import { useMemo } from 'react';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import { apiEnabled } from '@/lib/api';
+import {
+  acceptFriendApi,
+  apiEnabled,
+  blockFriendApi,
+  declineFriendApi,
+  listFriends,
+  removeFriendApi,
+  sendFriendRequestApi,
+  type ApiProfile,
+} from '@/lib/api';
 import { gracePeriodKey, todayKey } from '@/lib/dates';
 import { reconcile } from '@/lib/engine';
 import { goalProgress } from '@/lib/streaks';
@@ -25,12 +34,17 @@ import type {
   PactType,
   User,
 } from '@/store/types';
+import { useAuth } from './use-auth';
 
 // Unique across launches: persisted entities keep their ids, so a plain
 // counter would collide after rehydration.
 let idCounter = 0;
 const nextId = (prefix: string) =>
   `${prefix}-${Date.now().toString(36)}-${(idCounter++).toString(36)}`;
+
+// In-flight guard for refreshFriends(): a mount effect and a post-send refresh
+// can fire close together; the second call no-ops until the first settles.
+let refreshing = false;
 
 export type CreatePactInput = {
   title: string;
@@ -68,11 +82,12 @@ type State = {
   checkIn: (pactId: string, opts?: { progressValue?: number; date?: string }) => void;
   createPact: (input: CreatePactInput) => Pact;
   cancelPact: (pactId: string) => void;
-  acceptFriend: (friendshipId: string) => void;
-  declineFriend: (friendshipId: string) => void;
-  blockFriend: (friendshipId: string) => void;
-  removeFriend: (friendshipId: string) => void;
-  sendFriendRequest: (email: string) => FriendRequestResult;
+  acceptFriend: (friendshipId: string) => Promise<void>;
+  declineFriend: (friendshipId: string) => Promise<void>;
+  blockFriend: (friendshipId: string) => Promise<void>;
+  removeFriend: (friendshipId: string) => Promise<void>;
+  sendFriendRequest: (email: string) => Promise<FriendRequestResult>;
+  refreshFriends: () => Promise<void>;
   markRead: (notificationId: string) => void;
   markAllRead: () => void;
   updateProfile: (update: ProfileUpdate) => void;
@@ -100,6 +115,24 @@ function freshState() {
     notifications: buildSeedNotifications(),
     remindersEnabled: true,
   };
+}
+
+// A mutual pact is two twins sharing one mutualPactId; voiding it must void
+// both. Heal any historical drift (one twin cancelled while the other stayed
+// active — from before cancelPact cascaded) on load, so a cancelled mutual
+// pact never lingers as active in "Keeping".
+function healMutualCancellation(pacts: Pact[]): Pact[] {
+  const cancelledPairs = new Set(
+    pacts
+      .filter((p) => p.status === 'cancelled' && p.isMutual && p.mutualPactId)
+      .map((p) => p.mutualPactId)
+  );
+  if (cancelledPairs.size === 0) return pacts;
+  return pacts.map((p) =>
+    p.isMutual && p.mutualPactId && p.status === 'active' && cancelledPairs.has(p.mutualPactId)
+      ? { ...p, status: 'cancelled' as const }
+      : p
+  );
 }
 
 export const useStore = create<State>()(
@@ -217,9 +250,18 @@ export const useStore = create<State>()(
         const pact = pacts.find((p) => p.id === pactId);
         const keeper = users.find((u) => u.id === pact?.keeperUserId)?.username ?? 'Your keeper';
         set({
-          pacts: pacts.map((p) =>
-            p.id === pactId ? { ...p, status: 'cancelled' as const } : p
-          ),
+          // Voiding a mutual pact voids BOTH twins — the friend's linked copy
+          // shares the same mutualPactId (different id), so cancelling only the
+          // tapped one left its partner lingering as active.
+          pacts: pacts.map((p) => {
+            const isTarget = p.id === pactId;
+            const isActiveTwin =
+              !!pact?.isMutual &&
+              !!pact.mutualPactId &&
+              p.mutualPactId === pact.mutualPactId &&
+              p.status === 'active';
+            return isTarget || isActiveTwin ? { ...p, status: 'cancelled' as const } : p;
+          }),
           notifications: pact
             ? [
                 {
@@ -236,7 +278,17 @@ export const useStore = create<State>()(
         });
       },
 
-      acceptFriend: (friendshipId) => {
+      acceptFriend: async (friendshipId) => {
+        if (apiEnabled) {
+          const token = useAuth.getState().token;
+          if (!token) throw new Error('You appear to be signed out. Sign in and try again.');
+          await acceptFriendApi(token, friendshipId);
+          // Notifications sync is out of scope: the API path pulls the fresh
+          // graph but emits no local notification (unlike the demo path below).
+          await get().refreshFriends();
+          return;
+        }
+
         const { friendships, users, notifications } = get();
         const f = friendships.find((x) => x.id === friendshipId);
         const requester = users.find((u) => u.id === f?.requesterId)?.username ?? 'A friend';
@@ -260,7 +312,15 @@ export const useStore = create<State>()(
         });
       },
 
-      declineFriend: (friendshipId) => {
+      declineFriend: async (friendshipId) => {
+        if (apiEnabled) {
+          const token = useAuth.getState().token;
+          if (!token) throw new Error('You appear to be signed out. Sign in and try again.');
+          await declineFriendApi(token, friendshipId);
+          await get().refreshFriends();
+          return;
+        }
+
         set({
           friendships: get().friendships.map((f) =>
             f.id === friendshipId ? { ...f, status: 'declined' as const } : f
@@ -268,7 +328,15 @@ export const useStore = create<State>()(
         });
       },
 
-      blockFriend: (friendshipId) => {
+      blockFriend: async (friendshipId) => {
+        if (apiEnabled) {
+          const token = useAuth.getState().token;
+          if (!token) throw new Error('You appear to be signed out. Sign in and try again.');
+          await blockFriendApi(token, friendshipId);
+          await get().refreshFriends();
+          return;
+        }
+
         // pending, accepted and declined can all transition to blocked
         set({
           friendships: get().friendships.map((f) =>
@@ -277,11 +345,29 @@ export const useStore = create<State>()(
         });
       },
 
-      removeFriend: (friendshipId) => {
+      removeFriend: async (friendshipId) => {
+        if (apiEnabled) {
+          const token = useAuth.getState().token;
+          if (!token) throw new Error('You appear to be signed out. Sign in and try again.');
+          await removeFriendApi(token, friendshipId);
+          await get().refreshFriends();
+          return;
+        }
+
         set({ friendships: get().friendships.filter((f) => f.id !== friendshipId) });
       },
 
-      sendFriendRequest: (email) => {
+      sendFriendRequest: async (email) => {
+        if (apiEnabled) {
+          const token = useAuth.getState().token;
+          if (!token) throw new Error('You appear to be signed out. Sign in and try again.');
+          const { result } = await sendFriendRequestApi(token, email.trim());
+          // Pull the new outgoing request into the local cache immediately.
+          if (result === 'sent') await get().refreshFriends();
+          return result;
+        }
+
+        // Demo mode: resolve entirely against the in-memory seed dataset.
         const { users, friendships, meId } = get();
         const me = users.find((u) => u.id === meId);
         if (me && me.email.toLowerCase() === email.toLowerCase()) return 'self';
@@ -308,6 +394,86 @@ export const useStore = create<State>()(
           ],
         });
         return 'sent';
+      },
+
+      refreshFriends: async () => {
+        if (!apiEnabled) return;
+        // A mount-effect load and a post-send refresh can overlap; let the
+        // first win and no-op the rest until it settles.
+        if (refreshing) return;
+        const token = useAuth.getState().token;
+        if (!token) return;
+        refreshing = true;
+        try {
+          const { friends, incoming, outgoing } = await listFriends(token);
+
+          const counterparts: User[] = [];
+          const seen = new Set<string>();
+          const cacheCounterpart = (p: ApiProfile) => {
+            if (seen.has(p.id)) return;
+            seen.add(p.id);
+            counterparts.push({
+              id: p.id,
+              username: p.username,
+              email: p.email,
+              timezone: p.timezone,
+              notificationTime: p.notificationTime,
+              tintIndex: p.tintIndex,
+            });
+          };
+
+          // ADR 0003: stitch every row's local side to the ME sentinel and cache
+          // the counterpart by its real server id, so the existing selectors
+          // (which locate "me" by matching ME) partition the graph correctly.
+          // requester/addressee here are synthetic — nothing client-side reads
+          // the server's real orientation.
+          const normalised: Friendship[] = [];
+          for (const item of friends) {
+            normalised.push({
+              id: item.friendshipId,
+              requesterId: ME,
+              addresseeId: item.user.id,
+              status: 'accepted',
+              createdAt: item.createdAt,
+            });
+            cacheCounterpart(item.user);
+          }
+          for (const item of incoming) {
+            normalised.push({
+              id: item.friendshipId,
+              requesterId: item.user.id,
+              addresseeId: ME,
+              status: 'pending',
+              createdAt: item.createdAt,
+            });
+            cacheCounterpart(item.user);
+          }
+          for (const item of outgoing) {
+            normalised.push({
+              id: item.friendshipId,
+              requesterId: ME,
+              addresseeId: item.user.id,
+              status: 'pending',
+              createdAt: item.createdAt,
+            });
+            cacheCounterpart(item.user);
+          }
+
+          // Preserve the local ME user as-is; replace the counterpart cache.
+          const meUser = get().users.find((u) => u.id === ME);
+          set({
+            friendships: normalised,
+            users: meUser ? [meUser, ...counterparts] : counterparts,
+          });
+        } catch (e) {
+          // Best-effort background sync: a failed refresh (e.g. an expired
+          // session returning 401) must never reject into its callers — the
+          // tab-focus / pull-to-refresh effects and the post-action refresh
+          // that runs after an action has already succeeded server-side.
+          if (__DEV__) console.warn('refreshFriends failed:', e);
+        } finally {
+          refreshing = false;
+        }
       },
 
       markRead: (notificationId) => {
@@ -384,7 +550,10 @@ export const useStore = create<State>()(
         if (p && (p.dataMode ?? 'demo') !== DATA_MODE) {
           return { ...current, ...freshState(), meId: ME };
         }
-        return { ...current, ...p };
+        const merged = { ...current, ...p };
+        // Repair mutual pacts whose twins drifted (one cancelled, one still
+        // active) before cancelPact voided both.
+        return { ...merged, pacts: healMutualCancellation(merged.pacts) };
       },
       migrate: (persisted, version) => {
         // API mode always restarts bare and account-scoped

@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { ScrollView, TextInput, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
 
@@ -11,9 +11,16 @@ import { Avatar } from '@/components/ui/avatar';
 import { CheckIcon, CloseIcon, MailIcon } from '@/components/ui/icons';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Body, BodyBold, BodySemi, Heading, Kicker, Small } from '@/components/ui/type';
-import { apiEnabled } from '@/lib/api';
+import { apiEnabled, errorMessage } from '@/lib/api';
 import { fonts, colors, radii, shadows } from '@/theme/tokens';
-import { useFriends, useOutgoingRequests, usePendingRequests, useStore } from '@/store/use-store';
+import {
+  useFriends,
+  useOutgoingRequests,
+  usePendingRequests,
+  useStore,
+  type FriendRequestResult,
+} from '@/store/use-store';
+import { useTabs } from '@/store/use-tabs';
 
 export function FriendsScreen() {
   const insets = useSafeAreaInsets();
@@ -24,29 +31,63 @@ export function FriendsScreen() {
   const declineFriend = useStore((s) => s.declineFriend);
   const removeFriend = useStore((s) => s.removeFriend);
   const sendFriendRequest = useStore((s) => s.sendFriendRequest);
+  const refreshFriends = useStore((s) => s.refreshFriends);
   const pacts = useStore((s) => s.pacts);
   const blockFriend = useStore((s) => s.blockFriend);
   const [email, setEmail] = useState('');
   const [feedback, setFeedback] = useState<{ msg: string; ok: boolean } | null>(null);
   const [declineTarget, setDeclineTarget] = useState<{ id: string; name: string } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const activeTab = useTabs((s) => s.tab);
 
-  const send = () => {
+  // Re-pull the social graph whenever the Friends tab becomes active (API mode
+  // only). All four tab scenes stay mounted (display-toggled), so there is no
+  // remount to hang a load on — keying off the active tab is what lets a request
+  // sent from another device appear when you switch back to this tab.
+  useEffect(() => {
+    if (apiEnabled && activeTab === 'friends') void refreshFriends();
+  }, [activeTab, refreshFriends]);
+
+  // Manual pull-to-refresh. refreshFriends() never throws, so no catch needed.
+  const onRefreshGraph = async () => {
+    setRefreshing(true);
+    await refreshFriends();
+    setRefreshing(false);
+  };
+
+  const send = async () => {
     if (!email.includes('@')) return;
-    const result = sendFriendRequest(email.trim());
-    const messages: Record<string, { msg: string; ok: boolean }> = {
+    const messages: Record<FriendRequestResult, { msg: string; ok: boolean }> = {
       sent: { msg: 'Request sent — they’ll see it next time they open My Pact.', ok: true },
       not_found: {
         msg: apiEnabled
-          ? 'No one with that email here yet — friend lookup arrives with the server sync.'
+          ? 'No one with that email has an account yet.'
           : 'No one with that email here yet — in this demo, try mia@mypact.app.',
         ok: false,
       },
       duplicate: { msg: 'You already have a request or friendship with them.', ok: false },
       self: { msg: 'You can’t witness yourself — that’s the whole point.', ok: false },
     };
-    setFeedback(messages[result]);
-    if (result === 'sent') setEmail('');
+    try {
+      const result = await sendFriendRequest(email.trim());
+      setFeedback(messages[result]);
+      if (result === 'sent') setEmail('');
+    } catch (e) {
+      // Server unreachable or errored — surface a clear message.
+      setFeedback({ msg: errorMessage(e), ok: false });
+    }
     setTimeout(() => setFeedback(null), 3200);
+  };
+
+  // accept / decline / block / remove now hit the server (async). Surface any
+  // failure with the same transient banner the send path uses.
+  const runFriendAction = async (action: () => Promise<void>) => {
+    try {
+      await action();
+    } catch (e) {
+      setFeedback({ msg: errorMessage(e), ok: false });
+      setTimeout(() => setFeedback(null), 3200);
+    }
   };
 
   return (
@@ -61,6 +102,15 @@ export function FriendsScreen() {
       }}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
+      refreshControl={
+        apiEnabled ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefreshGraph}
+            tintColor={colors.ink50}
+          />
+        ) : undefined
+      }
     >
       <ScreenHeader kicker="Witnesses" title="Friends" />
 
@@ -147,7 +197,7 @@ export function FriendsScreen() {
                 <Small color={colors.ink50}>wants to witness your habits</Small>
               </View>
               <PressableScale
-                onPress={() => acceptFriend(friendship.id)}
+                onPress={() => runFriendAction(() => acceptFriend(friendship.id))}
                 accessibilityLabel={`Accept ${user.username}`}
                 style={{
                   width: 40,
@@ -229,7 +279,7 @@ export function FriendsScreen() {
                 <Small style={{ color: colors.white }}>Pact</Small>
               </PressableScale>
               <PressableScale
-                onPress={() => removeFriend(friendship.id)}
+                onPress={() => runFriendAction(() => removeFriend(friendship.id))}
                 accessibilityLabel={`Remove ${user.username}`}
                 style={{
                   paddingHorizontal: 12,
@@ -286,9 +336,7 @@ export function FriendsScreen() {
           >
             <Heading color={colors.ink50}>No witnesses yet</Heading>
             <Body color={colors.ink50} align="center">
-              {apiEnabled
-                ? 'Friend lookup arrives with the server sync. Your witnesses will appear here.'
-                : 'A pact needs two names. Invite someone above.'}
+              A pact needs two names. Invite someone by email above to get started.
             </Body>
           </View>
         )}
@@ -304,8 +352,9 @@ export function FriendsScreen() {
           </Body>
           <PressableScale
             onPress={() => {
-              if (declineTarget) declineFriend(declineTarget.id);
+              const id = declineTarget?.id;
               setDeclineTarget(null);
+              if (id) void runFriendAction(() => declineFriend(id));
             }}
             style={{
               borderWidth: 1.5,
@@ -319,8 +368,9 @@ export function FriendsScreen() {
           </PressableScale>
           <PressableScale
             onPress={() => {
-              if (declineTarget) blockFriend(declineTarget.id);
+              const id = declineTarget?.id;
               setDeclineTarget(null);
+              if (id) void runFriendAction(() => blockFriend(id));
             }}
             style={{
               backgroundColor: colors.failed,

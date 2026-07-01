@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "friendships_pair_unique" ON "friendships" USING btree (least("requester_id", "addressee_id"),greatest("requester_id", "addressee_id")) WHERE "friendships"."status" <> 'declined' AND "friendships"."deleted_at" IS NULL;

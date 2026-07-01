@@ -5,6 +5,7 @@ import { logger } from 'hono/logger';
 import { auth } from './auth';
 import type { AppEnv } from './context';
 import { env } from './env';
+import { friends } from './routes/friends';
 import { users } from './routes/users';
 
 // Everything lives under /api: Vercel routes only api/ functions, so the
@@ -47,3 +48,4 @@ app.use('*', async (c, next) => {
 });
 
 app.route('/users', users);
+app.route('/friends', friends);

@@ -153,3 +153,55 @@ export async function updateMe(
   const { data } = await call<ApiProfile>('/users/me', { method: 'PATCH', token, body: patch });
   return data;
 }
+
+/** One friendship oriented from the caller's side: the `user` is the counterpart. */
+export type ApiFriendItem = {
+  friendshipId: string;
+  status: 'pending' | 'accepted' | 'declined' | 'blocked';
+  createdAt: string;
+  user: ApiProfile;
+};
+
+/** GET /friends — the caller's social graph, partitioned server-side. */
+export async function listFriends(
+  token: string
+): Promise<{ friends: ApiFriendItem[]; incoming: ApiFriendItem[]; outgoing: ApiFriendItem[] }> {
+  const { data } = await call<{
+    friends: ApiFriendItem[];
+    incoming: ApiFriendItem[];
+    outgoing: ApiFriendItem[];
+  }>('/friends', { token });
+  return data;
+}
+
+/** POST /friends/requests — send a request by email; the server resolves the target. */
+export async function sendFriendRequestApi(
+  token: string,
+  email: string
+): Promise<{ result: 'not_found' | 'self' | 'duplicate' | 'sent' }> {
+  const { data } = await call<{ result: 'not_found' | 'self' | 'duplicate' | 'sent' }>(
+    '/friends/requests',
+    { method: 'POST', token, body: { email } }
+  );
+  return data;
+}
+
+/** POST /friends/:id/accept — the addressee accepts an incoming request. */
+export async function acceptFriendApi(token: string, friendshipId: string): Promise<void> {
+  await call(`/friends/${friendshipId}/accept`, { method: 'POST', token });
+}
+
+/** POST /friends/:id/decline — the addressee declines an incoming request. */
+export async function declineFriendApi(token: string, friendshipId: string): Promise<void> {
+  await call(`/friends/${friendshipId}/decline`, { method: 'POST', token });
+}
+
+/** POST /friends/:id/block — either participant blocks the bond. */
+export async function blockFriendApi(token: string, friendshipId: string): Promise<void> {
+  await call(`/friends/${friendshipId}/block`, { method: 'POST', token });
+}
+
+/** DELETE /friends/:id — either participant removes (soft-deletes) the bond. */
+export async function removeFriendApi(token: string, friendshipId: string): Promise<void> {
+  await call(`/friends/${friendshipId}`, { method: 'DELETE', token });
+}
