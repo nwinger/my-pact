@@ -50,7 +50,8 @@
     "eslint": "^9.0.0",
     "eslint-config-expo": "~56.0.4",
     "tsx": "^4.22.4",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^3.2.6"
   },
   "scripts": {
     "start": "expo start",
@@ -59,7 +60,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "api": "tsx watch server/index.ts",
+    "api": "tsx watch --env-file=.env.local server/index.ts",
+    "test": "vitest run",
     "auth:schema": "npx -y @better-auth/cli@latest generate --config server/auth.ts --output server/db/auth-schema.ts -y",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"

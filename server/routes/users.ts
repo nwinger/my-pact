@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../context';
 import { db } from '../db';
 import { user } from '../db/schema';
+import { profile } from './shared';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -14,25 +15,6 @@ function isValidTimezone(tz: string): boolean {
   } catch {
     return false;
   }
-}
-
-/** The profile shape the client's `User` type expects (`name` is the username). */
-function profile(u: {
-  id: string;
-  name: string;
-  email: string;
-  timezone?: string | null;
-  notificationTime?: string | null;
-  tintIndex?: number | null;
-}) {
-  return {
-    id: u.id,
-    username: u.name,
-    email: u.email,
-    timezone: u.timezone ?? 'UTC',
-    notificationTime: u.notificationTime ?? '08:00',
-    tintIndex: u.tintIndex ?? 0,
-  };
 }
 
 export const users = new Hono<AppEnv>();

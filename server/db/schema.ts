@@ -70,6 +70,16 @@ export const friendships = pgTable(
     index('friendships_requester_idx').on(t.requesterId),
     index('friendships_addressee_idx').on(t.addresseeId),
     check('friendships_not_self', sql`${t.requesterId} <> ${t.addresseeId}`),
+    // ADR 0002: one friendship per *unordered* pair. LEAST/GREATEST canonicalise
+    // the pair so A→B and B→A collide; the partial predicate lets declined
+    // tombstones and soft-deleted rows coexist with a fresh live row
+    // (re-request-after-decline and re-add-after-remove stay legal).
+    uniqueIndex('friendships_pair_unique')
+      .on(
+        sql`least(${t.requesterId}, ${t.addresseeId})`,
+        sql`greatest(${t.requesterId}, ${t.addresseeId})`
+      )
+      .where(sql`${t.status} <> 'declined' AND ${t.deletedAt} IS NULL`),
   ]
 );
 

@@ -28,7 +28,8 @@ export function PactsScreen() {
   const visible = useMemo(() => {
     if (filter === 'active')
       return pacts.filter((p) => p.creatorUserId === me.id && p.status === 'active');
-    if (filter === 'keeping') return pacts.filter((p) => p.keeperUserId === me.id);
+    if (filter === 'keeping')
+      return pacts.filter((p) => p.keeperUserId === me.id && p.status === 'active');
     return pacts.filter((p) => p.creatorUserId === me.id && p.status !== 'active');
   }, [pacts, filter, me.id]);
 
