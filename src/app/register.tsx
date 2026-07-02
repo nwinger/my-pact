@@ -8,7 +8,7 @@ import { AuthBackButton, AuthInput, SocialButtons } from '@/components/auth-bits
 import { Paper } from '@/components/ui/paper';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Body, BodyBold, BodySemi, Display, Kicker, Small } from '@/components/ui/type';
-import { apiEnabled, errorMessage } from '@/lib/api';
+import { errorMessage } from '@/lib/api';
 import { detectTimezone } from '@/lib/dates';
 import { useAuth } from '@/store/use-auth';
 import { useStore } from '@/store/use-store';
@@ -48,22 +48,13 @@ export default function Register() {
         password,
         timezone: detectTimezone(),
       });
-      // registration is server-side in API mode; sync the resulting profile
-      // (offline demo mode keeps writing the local values directly)
-      updateProfile(
-        profile
-          ? {
-              username: profile.username,
-              email: profile.email,
-              timezone: profile.timezone,
-              notificationTime: profile.notificationTime,
-            }
-          : {
-              username: username.trim().toLowerCase(),
-              email: email.trim().toLowerCase(),
-              timezone: detectTimezone(),
-            }
-      );
+      // registration is server-side; sync the resulting profile
+      updateProfile({
+        username: profile.username,
+        email: profile.email,
+        timezone: profile.timezone,
+        notificationTime: profile.notificationTime,
+      });
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -74,7 +65,6 @@ export default function Register() {
   const social = async (provider: 'google' | 'apple') => {
     try {
       await signInSocial(provider);
-      if (!apiEnabled) updateProfile({ email: 'you@mypact.app', timezone: detectTimezone() });
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -163,9 +153,7 @@ export default function Register() {
         </Animated.View>
 
         <Body align="center" color={colors.ink30} style={{ fontSize: 12.5 }}>
-          {apiEnabled
-            ? 'Your account is inscribed on the server.'
-            : 'Demo build — accounts live on this device only.'}
+          Your account is inscribed on the server.
         </Body>
       </ScrollView>
     </Paper>

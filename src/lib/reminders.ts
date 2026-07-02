@@ -80,6 +80,6 @@ export async function syncDailyReminder(
       },
     });
   } catch {
-    // Notifications are best-effort in the demo client.
+    // Local reminders are best-effort — never block the caller on them.
   }
 }

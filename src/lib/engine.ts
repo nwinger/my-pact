@@ -15,6 +15,14 @@ export { gracePeriodKey };
  * breach notifications, pact completion). Runs on launch and on
  * foregrounding, over the hydrated store, and returns what changed.
  *
+ * INTERIM LOCAL IMPLEMENTATION, not demo scaffolding (ADR-0004): pacts,
+ * check-ins and notifications are account-local until their server endpoints
+ * land, and this engine keeps breach/completion behavior working over that
+ * data. It retires slice-by-slice as those endpoints arrive, ending with
+ * engine-to-cron — at which point the scheduler rules live exactly once,
+ * server-side, and the cron's test suite is the executable spec. Until then,
+ * keep its rules in sync with the spec in README.
+ *
  * Rules applied:
  *  - Frequency pacts (any creator in the local store): every required day
  *    before today without a check-in gets a `failed` check-in recorded.

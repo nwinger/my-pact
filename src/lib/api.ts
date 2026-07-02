@@ -1,20 +1,25 @@
 /**
- * Typed client for the Hono backend (server/). When EXPO_PUBLIC_API_URL is
- * unset the app runs in offline demo mode and none of this is called.
+ * Typed client for the Hono backend (server/). EXPO_PUBLIC_API_URL is
+ * required — there is no offline mode (ADR-0004); an unset URL fails fast
+ * at module load instead of silently becoming a different app.
  */
 
 import { Platform } from 'react-native';
 
-const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/+$/, '') || null;
+const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
+if (!API_URL) {
+  throw new Error(
+    'EXPO_PUBLIC_API_URL is not set — My Pact needs its backend API to run. ' +
+      'Fix: copy .env.example to .env (it points the app at http://localhost:8787) ' +
+      'and restart the dev server. Full backend setup: docs/backend-setup.md'
+  );
+}
 
 // Native fetch sends `Origin: null`, which Better Auth's CSRF check rejects.
 // Its expo() server plugin trusts this header instead (must match app.json's
 // scheme and the server's APP_SCHEME).
 const ORIGIN_HEADERS: Record<string, string> =
   Platform.OS === 'web' ? {} : { 'expo-origin': 'mypact://' };
-
-/** false = offline demo mode (mock auth, seeded data). */
-export const apiEnabled = API_URL !== null;
 
 export class ApiError extends Error {
   constructor(
@@ -69,7 +74,6 @@ async function call<T>(
   path: string,
   opts: { method?: string; token?: string | null; body?: unknown } = {}
 ): Promise<{ data: T; headers: Headers }> {
-  if (!API_URL) throw new ApiError('API is not configured.', 0);
   let res: Response;
   try {
     res = await fetch(`${API_URL}/api${path}`, {

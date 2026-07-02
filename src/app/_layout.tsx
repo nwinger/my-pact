@@ -19,7 +19,7 @@ import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Paper } from '@/components/ui/paper';
-import { ApiError, apiEnabled, fetchMe, updateMe } from '@/lib/api';
+import { ApiError, fetchMe, updateMe } from '@/lib/api';
 import { detectTimezone } from '@/lib/dates';
 import { syncDailyReminder } from '@/lib/reminders';
 import { useHydrated } from '@/lib/use-hydrated';
@@ -67,10 +67,10 @@ export default function RootLayout() {
     if (me.timezone !== timezone) useStore.getState().updateProfile({ timezone });
   }, [ready, signedIn, runReconcile]);
 
-  // In API mode, confirm the persisted session is still alive and pull the
-  // server profile into the local store; a revoked/expired token signs out.
+  // Confirm the persisted session is still alive and pull the server
+  // profile into the local store; a revoked/expired token signs out.
   useEffect(() => {
-    if (!ready || !signedIn || !apiEnabled) return;
+    if (!ready || !signedIn) return;
     const token = useAuth.getState().token;
     if (!token) return;
     fetchMe(token)

@@ -8,13 +8,12 @@ import { ScreenHeader } from '@/components/screen-header';
 import { ChevronLeftIcon } from '@/components/ui/icons';
 import { Paper } from '@/components/ui/paper';
 import { PressableScale } from '@/components/ui/pressable-scale';
-import { Sheet } from '@/components/ui/sheet';
-import { Body, BodyBold, BodySemi, Heading, Kicker, Small } from '@/components/ui/type';
-import { apiEnabled, updateMe } from '@/lib/api';
+import { Body, BodyBold, BodySemi, Kicker, Small } from '@/components/ui/type';
+import { updateMe } from '@/lib/api';
 import { syncDailyReminder } from '@/lib/reminders';
 import { useAuth } from '@/store/use-auth';
 import { useMe, useStore } from '@/store/use-store';
-import { colors, fonts, radii, shadows } from '@/theme/tokens';
+import { colors, fonts, radii } from '@/theme/tokens';
 
 const TIMES = ['06:00', '06:30', '07:00', '07:30', '08:00', '08:30', '09:00', '12:00', '18:00', '20:00', '21:00'];
 
@@ -33,17 +32,14 @@ export default function Settings() {
   const updateProfile = useStore((s) => s.updateProfile);
   const remindersEnabled = useStore((s) => s.remindersEnabled);
   const setRemindersEnabled = useStore((s) => s.setRemindersEnabled);
-  const resetLocal = useStore((s) => s.resetLocal);
   const signOut = useAuth((s) => s.signOut);
 
   const [username, setUsername] = useState(me.username);
   const [usernameError, setUsernameError] = useState<string | null>(null);
-  const [confirmReset, setConfirmReset] = useState(false);
 
-  // In API mode, mirror profile edits to the server — otherwise the launch
-  // sync (fetchMe in _layout) reverts them on the next start.
+  // Mirror profile edits to the server — otherwise the launch sync
+  // (fetchMe in _layout) reverts them on the next start.
   const syncProfileToServer = (patch: { username?: string; notificationTime?: string }) => {
-    if (!apiEnabled) return;
     const token = useAuth.getState().token;
     if (token) void updateMe(token, patch).catch(() => {});
   };
@@ -198,23 +194,6 @@ export default function Settings() {
         </Section>
 
         <Section title="Danger zone" delay={220}>
-          {/* demo only: API-mode accounts have nothing to reseed */}
-          {!apiEnabled && (
-            <PressableScale
-              onPress={() => setConfirmReset(true)}
-              style={{
-                borderWidth: 1.5,
-                borderColor: colors.ink,
-                backgroundColor: colors.card,
-                borderRadius: radii.pill,
-                paddingVertical: 14,
-                alignItems: 'center',
-                boxShadow: shadows.card,
-              }}
-            >
-              <BodySemi>Reset demo data</BodySemi>
-            </PressableScale>
-          )}
           <PressableScale
             onPress={() => {
               void syncDailyReminder(false, me.notificationTime);
@@ -233,48 +212,9 @@ export default function Settings() {
         </Section>
 
         <Body color={colors.ink30} align="center" style={{ fontSize: 12.5 }}>
-          {apiEnabled
-            ? 'My Pact · pacts live on this device until the server learns them'
-            : 'My Pact · demo build · data lives on this device'}
+          My Pact · pacts live on this device until the server learns them
         </Body>
       </ScrollView>
-
-      <Sheet open={confirmReset} onClose={() => setConfirmReset(false)}>
-        <View style={{ padding: 24, paddingBottom: 44, gap: 14 }}>
-          <Heading>Reset everything?</Heading>
-          <Body color={colors.ink70}>
-            Pacts, check-ins, friends and notifications return to the demo seed. This
-            cannot be undone.
-          </Body>
-          <PressableScale
-            onPress={() => {
-              resetLocal();
-              setConfirmReset(false);
-              router.back();
-            }}
-            style={{
-              backgroundColor: colors.failed,
-              borderRadius: radii.pill,
-              paddingVertical: 15,
-              alignItems: 'center',
-            }}
-          >
-            <BodyBold style={{ color: colors.white }}>Yes, start fresh</BodyBold>
-          </PressableScale>
-          <PressableScale
-            onPress={() => setConfirmReset(false)}
-            style={{
-              borderWidth: 1.5,
-              borderColor: colors.ink,
-              borderRadius: radii.pill,
-              paddingVertical: 15,
-              alignItems: 'center',
-            }}
-          >
-            <BodySemi>Keep my record</BodySemi>
-          </PressableScale>
-        </View>
-      </Sheet>
     </Paper>
   );
 }

@@ -8,7 +8,7 @@ import { AuthBackButton, AuthInput, SocialButtons } from '@/components/auth-bits
 import { Paper } from '@/components/ui/paper';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Body, BodyBold, BodySemi, Display, Kicker } from '@/components/ui/type';
-import { apiEnabled, errorMessage } from '@/lib/api';
+import { errorMessage } from '@/lib/api';
 import { useAuth } from '@/store/use-auth';
 import { useStore } from '@/store/use-store';
 import { colors, radii, shadows } from '@/theme/tokens';
@@ -37,18 +37,13 @@ export default function Login() {
     setBusy(true);
     try {
       const profile = await signIn(email.trim().toLowerCase(), password);
-      if (profile) {
-        // sync the server profile into the local store
-        updateProfile({
-          username: profile.username,
-          email: profile.email,
-          timezone: profile.timezone,
-          notificationTime: profile.notificationTime,
-        });
-      } else {
-        // offline demo mode keeps its old behavior
-        updateProfile({ email: email.trim().toLowerCase() });
-      }
+      // sync the server profile into the local store
+      updateProfile({
+        username: profile.username,
+        email: profile.email,
+        timezone: profile.timezone,
+        notificationTime: profile.notificationTime,
+      });
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -133,9 +128,7 @@ export default function Login() {
         </Animated.View>
 
         <Body align="center" color={colors.ink30} style={{ fontSize: 12.5 }}>
-          {apiEnabled
-            ? 'Sessions are sealed and stored securely.'
-            : 'Demo build — any email and password sign you in locally.'}
+          Sessions are sealed and stored securely.
         </Body>
       </ScrollView>
     </Paper>

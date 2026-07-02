@@ -6,10 +6,11 @@ Guidance for Claude Code when working in this repository.
 
 ```bash
 npm install
-npx expo start --web    # web dev server (fastest way to verify changes)
+npx expo start --web    # web dev server (needs the API up — see Verifying changes)
 npx expo start          # native (Expo Go / dev build)
 npx tsc --noEmit        # typecheck (client + server)
 npx expo lint           # eslint (React Compiler rules enabled)
+npm test                # vitest — server route tests (needs supabase running)
 
 supabase start          # local Postgres (ports 553xx — needs Docker/OrbStack)
 npm run db:migrate      # apply drizzle/ migrations
@@ -21,11 +22,14 @@ npm run api             # Hono backend on http://localhost:8787/api
 "My Pact" — a social habit-tracking Expo app (SDK 56, React 19, RN 0.85,
 expo-router, reanimated v4, zustand) plus a Hono + Better Auth + Drizzle
 backend in `server/` (see `docs/adr/0001-backend-stack.md` and
-`docs/backend-setup.md`). **Auth is real** (email+password against Better
-Auth, bearer token in secure storage) when `EXPO_PUBLIC_API_URL` is set —
-put it in `.env`; without it the app runs in offline demo mode with mock
-sessions. Domain data (pacts, friends, check-ins) is still on-device; the
-session guard is `Stack.Protected` in `src/app/_layout.tsx`.
+`docs/backend-setup.md`). The app is **API-only** (ADR-0004): auth is real
+(email+password against Better Auth, bearer token in secure storage), the
+friends graph is server-side, and `EXPO_PUBLIC_API_URL` is required — put
+it in `.env` (copy `.env.example`). Booting without it fails fast at module
+load; there is no offline or demo fallback. Pacts, check-ins and
+notifications are still on-device (account-scoped, cleared on sign-out)
+until their endpoints land. The session guard is `Stack.Protected` in
+`src/app/_layout.tsx`.
 
 ## Architecture notes
 
@@ -70,9 +74,29 @@ session guard is `Stack.Protected` in `src/app/_layout.tsx`.
 
 ## Verifying changes
 
-Run the web server and check at a mobile viewport (~375×812). The welcome
-overlay appears first — the "Sign me up" button dismisses it. Check-ins reset
-on reload (mock store is in-memory).
+Verification runs against the real stack — three processes:
+
+```bash
+supabase start          # 1. local Postgres (skip if already running)
+npm run db:migrate      #    apply migrations (first run / after schema changes)
+npm run api             # 2. Hono API on http://localhost:8787/api
+npx expo start --web    # 3. web dev server (EXPO_PUBLIC_API_URL from .env)
+```
+
+Check at a mobile viewport (~375×812). From the welcome screen, register a
+throwaway account through the UI ("Make my first pact" → the register form)
+and exercise the change on it. Local Postgres persists across sessions until
+you reset it (`supabase db reset` + `npm run db:migrate`), so throwaway
+accounts and their data survive dev-server restarts. Two-sided flows (friend
+requests, keeper views) take two throwaway accounts — sign out, register the
+second, and switch between them.
+
+For the rare deep-history visual check (long streaks, breach escalation),
+insert rows with ad-hoc SQL against local Postgres (Studio at
+http://127.0.0.1:55323, or `psql` on port 55322) — never a maintained
+fixture. The time-dependent rules themselves are pure
+(`src/lib/streaks.ts`, `src/lib/engine.ts`) and belong under unit tests,
+not seeded data.
 
 ## Agent skills
 

@@ -11,7 +11,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { CheckIcon, CloseIcon, MailIcon } from '@/components/ui/icons';
 import { PressableScale } from '@/components/ui/pressable-scale';
 import { Body, BodyBold, BodySemi, Heading, Kicker, Small } from '@/components/ui/type';
-import { apiEnabled, errorMessage } from '@/lib/api';
+import { errorMessage } from '@/lib/api';
 import { fonts, colors, radii, shadows } from '@/theme/tokens';
 import {
   useFriends,
@@ -21,6 +21,13 @@ import {
   type FriendRequestResult,
 } from '@/store/use-store';
 import { useTabs } from '@/store/use-tabs';
+
+const SEND_FEEDBACK: Record<FriendRequestResult, { msg: string; ok: boolean }> = {
+  sent: { msg: 'Request sent — they’ll see it next time they open My Pact.', ok: true },
+  not_found: { msg: 'No one with that email has an account yet.', ok: false },
+  duplicate: { msg: 'You already have a request or friendship with them.', ok: false },
+  self: { msg: 'You can’t witness yourself — that’s the whole point.', ok: false },
+};
 
 export function FriendsScreen() {
   const insets = useSafeAreaInsets();
@@ -40,12 +47,12 @@ export function FriendsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const activeTab = useTabs((s) => s.tab);
 
-  // Re-pull the social graph whenever the Friends tab becomes active (API mode
-  // only). All four tab scenes stay mounted (display-toggled), so there is no
-  // remount to hang a load on — keying off the active tab is what lets a request
-  // sent from another device appear when you switch back to this tab.
+  // Re-pull the social graph whenever the Friends tab becomes active. All
+  // four tab scenes stay mounted (display-toggled), so there is no remount to
+  // hang a load on — keying off the active tab is what lets a request sent
+  // from another device appear when you switch back to this tab.
   useEffect(() => {
-    if (apiEnabled && activeTab === 'friends') void refreshFriends();
+    if (activeTab === 'friends') void refreshFriends();
   }, [activeTab, refreshFriends]);
 
   // Manual pull-to-refresh. refreshFriends() never throws, so no catch needed.
@@ -57,20 +64,9 @@ export function FriendsScreen() {
 
   const send = async () => {
     if (!email.includes('@')) return;
-    const messages: Record<FriendRequestResult, { msg: string; ok: boolean }> = {
-      sent: { msg: 'Request sent — they’ll see it next time they open My Pact.', ok: true },
-      not_found: {
-        msg: apiEnabled
-          ? 'No one with that email has an account yet.'
-          : 'No one with that email here yet — in this demo, try mia@mypact.app.',
-        ok: false,
-      },
-      duplicate: { msg: 'You already have a request or friendship with them.', ok: false },
-      self: { msg: 'You can’t witness yourself — that’s the whole point.', ok: false },
-    };
     try {
       const result = await sendFriendRequest(email.trim());
-      setFeedback(messages[result]);
+      setFeedback(SEND_FEEDBACK[result]);
       if (result === 'sent') setEmail('');
     } catch (e) {
       // Server unreachable or errored — surface a clear message.
@@ -103,13 +99,11 @@ export function FriendsScreen() {
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       refreshControl={
-        apiEnabled ? (
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefreshGraph}
-            tintColor={colors.ink50}
-          />
-        ) : undefined
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefreshGraph}
+          tintColor={colors.ink50}
+        />
       }
     >
       <ScreenHeader kicker="Witnesses" title="Friends" />

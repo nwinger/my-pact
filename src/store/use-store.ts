@@ -5,7 +5,6 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import {
   acceptFriendApi,
-  apiEnabled,
   blockFriendApi,
   declineFriendApi,
   listFriends,
@@ -16,16 +15,6 @@ import {
 import { gracePeriodKey, todayKey } from '@/lib/dates';
 import { reconcile } from '@/lib/engine';
 import { goalProgress } from '@/lib/streaks';
-import {
-  ME,
-  buildBareState,
-  buildSeedCheckIns,
-  buildSeedFriendships,
-  buildSeedKeeperPacts,
-  buildSeedNotifications,
-  buildSeedPacts,
-  seedUsers,
-} from '@/store/seed';
 import type {
   AppNotification,
   CheckIn,
@@ -35,6 +24,13 @@ import type {
   User,
 } from '@/store/types';
 import { useAuth } from './use-auth';
+
+/**
+ * The local identity sentinel — "me" in the on-device store (ADR-0003,
+ * superseded by ADR-0005: the follow-up identity-adoption change replaces
+ * this with the real server id).
+ */
+const ME = 'u-me';
 
 // Unique across launches: persisted entities keep their ids, so a plain
 // counter would collide after rehydration.
@@ -96,25 +92,30 @@ type State = {
   resetLocal: () => void;
 };
 
-// Persisted alongside the data so a build that switches between demo and
-// API mode never inherits the other mode's dataset (see `merge` below).
-const DATA_MODE = apiEnabled ? 'api' : 'demo';
-
-// Demo mode seeds the full showcase dataset. API mode starts bare — the
-// server profile fills `me` on sign-in and the domain stays empty until its
-// endpoints land.
-function freshState() {
-  if (apiEnabled) {
-    return { ...buildBareState(), remindersEnabled: true };
-  }
+// A fresh account starts bare: just me (the server profile overwrites this
+// row on sign-in), no pacts/friends/notifications. The domain stays local
+// until its server endpoints land, but it's the account's own data.
+function freshState(): Pick<
+  State,
+  'users' | 'friendships' | 'pacts' | 'checkIns' | 'notifications' | 'remindersEnabled'
+> {
   return {
-    users: seedUsers,
-    friendships: buildSeedFriendships(),
-    pacts: [...buildSeedPacts(), ...buildSeedKeeperPacts()],
-    checkIns: buildSeedCheckIns(),
-    notifications: buildSeedNotifications(),
+    users: [
+      { id: ME, username: 'you', email: '', timezone: 'UTC', notificationTime: '08:00', tintIndex: 1 },
+    ],
+    friendships: [],
+    pacts: [],
+    checkIns: [],
+    notifications: [],
     remindersEnabled: true,
   };
+}
+
+// Every friends action needs a live session before it may touch the server.
+function requireToken(): string {
+  const token = useAuth.getState().token;
+  if (!token) throw new Error('You appear to be signed out. Sign in and try again.');
+  return token;
 }
 
 // A mutual pact is two twins sharing one mutualPactId; voiding it must void
@@ -279,125 +280,35 @@ export const useStore = create<State>()(
       },
 
       acceptFriend: async (friendshipId) => {
-        if (apiEnabled) {
-          const token = useAuth.getState().token;
-          if (!token) throw new Error('You appear to be signed out. Sign in and try again.');
-          await acceptFriendApi(token, friendshipId);
-          // Notifications sync is out of scope: the API path pulls the fresh
-          // graph but emits no local notification (unlike the demo path below).
-          await get().refreshFriends();
-          return;
-        }
-
-        const { friendships, users, notifications } = get();
-        const f = friendships.find((x) => x.id === friendshipId);
-        const requester = users.find((u) => u.id === f?.requesterId)?.username ?? 'A friend';
-        set({
-          friendships: friendships.map((x) =>
-            x.id === friendshipId ? { ...x, status: 'accepted' as const } : x
-          ),
-          notifications: f
-            ? [
-                {
-                  id: nextId('n'),
-                  type: 'friend_accepted',
-                  title: `You and ${requester} are bound`,
-                  body: 'You can now witness each other’s pacts.',
-                  sentAt: 'Just now',
-                  friendId: f.requesterId,
-                },
-                ...notifications,
-              ]
-            : notifications,
-        });
+        await acceptFriendApi(requireToken(), friendshipId);
+        // Notifications sync is out of scope: this pulls the fresh graph but
+        // emits no local notification.
+        await get().refreshFriends();
       },
 
       declineFriend: async (friendshipId) => {
-        if (apiEnabled) {
-          const token = useAuth.getState().token;
-          if (!token) throw new Error('You appear to be signed out. Sign in and try again.');
-          await declineFriendApi(token, friendshipId);
-          await get().refreshFriends();
-          return;
-        }
-
-        set({
-          friendships: get().friendships.map((f) =>
-            f.id === friendshipId ? { ...f, status: 'declined' as const } : f
-          ),
-        });
+        await declineFriendApi(requireToken(), friendshipId);
+        await get().refreshFriends();
       },
 
       blockFriend: async (friendshipId) => {
-        if (apiEnabled) {
-          const token = useAuth.getState().token;
-          if (!token) throw new Error('You appear to be signed out. Sign in and try again.');
-          await blockFriendApi(token, friendshipId);
-          await get().refreshFriends();
-          return;
-        }
-
-        // pending, accepted and declined can all transition to blocked
-        set({
-          friendships: get().friendships.map((f) =>
-            f.id === friendshipId ? { ...f, status: 'blocked' as const } : f
-          ),
-        });
+        await blockFriendApi(requireToken(), friendshipId);
+        await get().refreshFriends();
       },
 
       removeFriend: async (friendshipId) => {
-        if (apiEnabled) {
-          const token = useAuth.getState().token;
-          if (!token) throw new Error('You appear to be signed out. Sign in and try again.');
-          await removeFriendApi(token, friendshipId);
-          await get().refreshFriends();
-          return;
-        }
-
-        set({ friendships: get().friendships.filter((f) => f.id !== friendshipId) });
+        await removeFriendApi(requireToken(), friendshipId);
+        await get().refreshFriends();
       },
 
       sendFriendRequest: async (email) => {
-        if (apiEnabled) {
-          const token = useAuth.getState().token;
-          if (!token) throw new Error('You appear to be signed out. Sign in and try again.');
-          const { result } = await sendFriendRequestApi(token, email.trim());
-          // Pull the new outgoing request into the local cache immediately.
-          if (result === 'sent') await get().refreshFriends();
-          return result;
-        }
-
-        // Demo mode: resolve entirely against the in-memory seed dataset.
-        const { users, friendships, meId } = get();
-        const me = users.find((u) => u.id === meId);
-        if (me && me.email.toLowerCase() === email.toLowerCase()) return 'self';
-        const target = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-        if (!target) return 'not_found';
-        if (target.id === meId) return 'self';
-        const existing = friendships.some(
-          (f) =>
-            ((f.requesterId === meId && f.addresseeId === target.id) ||
-              (f.requesterId === target.id && f.addresseeId === meId)) &&
-            f.status !== 'declined'
-        );
-        if (existing) return 'duplicate';
-        set({
-          friendships: [
-            ...friendships,
-            {
-              id: nextId('f'),
-              requesterId: meId,
-              addresseeId: target.id,
-              status: 'pending',
-              createdAt: todayKey(),
-            },
-          ],
-        });
-        return 'sent';
+        const { result } = await sendFriendRequestApi(requireToken(), email.trim());
+        // Pull the new outgoing request into the local cache immediately.
+        if (result === 'sent') await get().refreshFriends();
+        return result;
       },
 
       refreshFriends: async () => {
-        if (!apiEnabled) return;
         // A mount-effect load and a post-send refresh can overlap; let the
         // first win and no-op the rest until it settles.
         if (refreshing) return;
@@ -530,11 +441,10 @@ export const useStore = create<State>()(
     }),
     {
       name: 'mypact-data',
-      // v3: API mode starts bare instead of demo-seeded
-      version: 3,
+      // v4: demo mode removed (ADR-0004) — see `migrate`
+      version: 4,
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({
-        dataMode: DATA_MODE,
         meId: s.meId,
         users: s.users,
         friendships: s.friendships,
@@ -543,25 +453,16 @@ export const useStore = create<State>()(
         notifications: s.notifications,
         remindersEnabled: s.remindersEnabled,
       }),
-      // Same persist version, different mode: discard the other mode's data
-      // (pre-v3 stores carried no marker and were always demo-seeded).
       merge: (persisted, current) => {
-        const p = persisted as (Partial<State> & { dataMode?: string }) | null;
-        if (p && (p.dataMode ?? 'demo') !== DATA_MODE) {
-          return { ...current, ...freshState(), meId: ME };
-        }
-        const merged = { ...current, ...p };
+        const merged = { ...current, ...(persisted as Partial<State> | null) };
         // Repair mutual pacts whose twins drifted (one cancelled, one still
         // active) before cancelPact voided both.
         return { ...merged, pacts: healMutualCancellation(merged.pacts) };
       },
-      migrate: (persisted, version) => {
-        // API mode always restarts bare and account-scoped
-        if (apiEnabled) return { ...freshState(), meId: ME } as never;
-        // demo: the v2 shape is identical to v3 — keep the user's data
-        if (version === 2 && persisted) return persisted as never;
-        return { ...freshState(), meId: ME } as never;
-      },
+      // Every pre-v4 store restarts bare, unconditionally: demo datasets and
+      // the mode marker are gone, and ADR-0004 authorized discarding all
+      // prior local data rather than carrying migration paths for it.
+      migrate: () => ({ ...freshState(), meId: ME }) as never,
     }
   )
 );

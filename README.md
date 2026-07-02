@@ -7,18 +7,19 @@ Users commit to habits through accountability contracts — *pacts* — witnesse
 by a friend (the *keeper*). The app drives the loop with daily check-ins
 ("seals"), streaks, and breach notifications.
 
-The client is feature-complete against an on-device data layer; the
-API/backend described in the product spec plugs in behind the zustand stores
+The app is server-authoritative and online-only for writes (ADR-0004): auth
+and the friends graph run against the backend, and the remaining domain
+slices (pacts, check-ins, notifications) plug in behind the zustand stores
 without touching the screens.
 
 ## Features
 
 - **Auth flow** — welcome → register/login (email+password, Google/Apple
   buttons), session persisted with expo-secure-store on device. Sign-out and
-  the auth guard (`Stack.Protected`) route accordingly. With
-  `EXPO_PUBLIC_API_URL` set, email+password runs for real against the
-  backend (Better Auth, bearer sessions; Google/Apple are scaffolded behind
-  OAuth credentials); without it, auth is mocked offline.
+  the auth guard (`Stack.Protected`) route accordingly. Email+password runs
+  against the backend (Better Auth, bearer sessions; Google/Apple are
+  scaffolded behind OAuth credentials). `EXPO_PUBLIC_API_URL` is required —
+  the app fails fast at startup without it.
 - **Pacts** — frequency (daily / chosen weekdays) and goal (target + unit)
   pacts, mutual pacts that create a linked twin where both sides check in,
   keeper selection from accepted friends, 21/30/60/90-day durations,
@@ -40,11 +41,11 @@ without touching the screens.
 - **Notifications** — all five spec types in the inbox with unread badges and
   deep links; a daily local reminder fires at the user's notification time
   (expo-notifications; remote push via FCM arrives with the real backend).
-- **Settings** — username, notification time, reminder toggle, demo-data
-  reset (demo build only), sign out. The timezone follows the device
-  automatically and is kept in sync with the server.
-- **Persistence** — domain data in AsyncStorage, auth in secure storage;
-  check-ins and streaks survive restarts. "Reset demo data" reseeds.
+- **Settings** — username, notification time, reminder toggle, sign out.
+  The timezone follows the device automatically and is kept in sync with
+  the server.
+- **Persistence** — domain data in AsyncStorage (account-scoped, cleared on
+  sign-out), auth in secure storage; check-ins and streaks survive restarts.
 
 ## Design
 
@@ -66,20 +67,19 @@ An "ink on paper" contract aesthetic:
 
 ## Running it
 
+The backend is required — the app fails fast at startup without
+`EXPO_PUBLIC_API_URL` (see `docs/backend-setup.md`):
+
 ```bash
 npm install
-npx expo start          # iOS / Android via Expo Go or dev build
-npx expo start --web    # web preview
-```
+cp .env.example .env    # sets EXPO_PUBLIC_API_URL=http://localhost:8787
 
-With the backend (real login; see `docs/backend-setup.md`):
-
-```bash
 supabase start          # local Postgres — needs Docker/OrbStack
 npm run db:migrate
 npm run api             # Hono API on http://localhost:8787/api
-echo 'EXPO_PUBLIC_API_URL=http://localhost:8787' > .env
-npx expo start --web
+
+npx expo start          # iOS / Android via Expo Go or dev build
+npx expo start --web    # web preview
 ```
 
 ## Structure
@@ -90,11 +90,11 @@ src/
                   pact/[id], inbox, settings + welcome/login/register)
   screens/        the four tab scenes (home, pacts, friends, profile)
   components/     pact cards, tab bar, seal button, sheet, auth bits, ui/
-  store/          zustand stores (domain + auth + tab) with persistence, seed data
+  store/          zustand stores (domain + auth + tab) with persistence
   lib/            date helpers, streak math, scheduler engine, reminders,
                   hydration, api client (api.ts)
   theme/          design tokens (colors, fonts, radii, shadows)
-server/           Hono backend: Better Auth, drizzle schema, /users routes
+server/           Hono backend: Better Auth, drizzle schema, /users + /friends routes
 api/              Vercel Functions entry (catch-all → the Hono app)
 drizzle/          generated SQL migrations
 supabase/         local Supabase config (`supabase start`, ports 553xx)
@@ -110,10 +110,16 @@ where inactive tab scenes stay visible, and behaves identically on native.
 ## Backend status
 
 The backend (Hono + Drizzle/Supabase + Better Auth on Vercel — see
-`docs/adr/0001-backend-stack.md`) now handles auth for real: registration,
-login, bearer sessions and `GET/PATCH /users/me`. The domain tables (pacts,
-check-ins, friendships, notifications) exist in the schema with the client's
-hardened rules; their endpoints are the next step, after which store actions
-become React Query mutations and `src/lib/engine.ts` retires in favor of
-server-side cron schedulers. Offline demo mode (no `EXPO_PUBLIC_API_URL`)
-keeps working throughout.
+`docs/adr/0001-backend-stack.md`) now handles auth and the friends graph
+for real: registration, login, bearer sessions, `GET/PATCH /users/me`,
+witness lookup and the friendship request lifecycle. The remaining domain
+tables (pacts, check-ins, notifications) exist in the schema with the
+client's hardened rules; their endpoints are the next step, after which
+store actions become React Query mutations and `src/lib/engine.ts` retires
+in favor of server-side cron schedulers.
+
+An earlier version of this section promised that offline demo mode would
+keep working throughout the backend build-out. That promise is withdrawn —
+deliberately, not as doc rot: demo mode is removed (ADR-0004), the app is
+API-only, and booting without `EXPO_PUBLIC_API_URL` fails fast instead of
+falling back to mock auth and seeded data.

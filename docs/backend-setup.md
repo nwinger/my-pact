@@ -14,10 +14,12 @@ npm run api               # Hono API on http://localhost:8787/api
 EXPO_PUBLIC_API_URL=http://localhost:8787 npx expo start --web
 ```
 
-No `.env` is needed for local dev — `server/env.ts` falls back to the local
-Supabase DB URL and a dev-only auth secret. Without `EXPO_PUBLIC_API_URL` the
-app runs in **offline demo mode** (mock auth, seeded data), exactly as before.
-On a physical device, point `EXPO_PUBLIC_API_URL` at your machine's LAN IP.
+The server needs no `.env` for local dev — `server/env.ts` falls back to the
+local Supabase DB URL and a dev-only auth secret. The client, however,
+**requires** `EXPO_PUBLIC_API_URL` (copy `.env.example` to `.env`, or pass it
+inline as above): booting without it fails fast at startup — there is no
+offline/demo fallback (ADR-0004). On a physical device, point
+`EXPO_PUBLIC_API_URL` at your machine's LAN IP, not localhost.
 
 Useful: Supabase Studio at http://127.0.0.1:55323, `supabase stop` when done.
 
@@ -96,9 +98,8 @@ client). The scaffold keeps the UI in place; wire the buttons to
 
 ## Not wired yet (next sessions)
 
-- Pacts / check-ins / friends / notifications endpoints (the domain tables
-  and rules already exist in `server/db/schema.ts`). Until friends lookup
-  lands, API mode cannot add witnesses, so pact creation is intentionally
-  gated with explanatory copy.
+- Pacts / check-ins / notifications endpoints (the domain tables and rules
+  already exist in `server/db/schema.ts`; friends are wired). Until then,
+  those slices are account-local on the device.
 - Server cron schedulers to replace `src/lib/engine.ts` (Vercel cron →
   Hono routes), then remote push via FCM.
