@@ -1,7 +1,7 @@
 # ADR 0003: Client identity stays the `'u-me'` sentinel; the server orients domain rows
 
 Date: 2026-07-01
-Status: accepted
+Status: superseded by ADR-0005
 
 ## Context
 
