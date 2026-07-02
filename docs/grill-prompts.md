@@ -11,9 +11,11 @@ Usage notes:
 - Slices 5 → 6 → 7 → 8 → 9 form a dependency chain (pacts → check-ins →
   cron → notifications → push), so grilling them in that order lets earlier
   answers feed later sessions.
-- Slice 10 (demo mode) is worth grilling **first**: its answer (e.g., one
-  data-layer seam vs. scattered `apiEnabled` forks) changes how you'd build
-  every other slice.
+- Slice 10 (demo mode) was grilled **first**, as recommended — see its
+  section for the outcome (demo mode deleted, server id adopted as client
+  identity). Prompts 1–9 predate that outcome, so their "Where things
+  stand" notes still describe demo-era behavior; re-ground before copying
+  one into a session.
 
 ---
 
@@ -409,7 +411,20 @@ Grill me hardest on:
 
 ---
 
-## 10. Demo mode — keep, shrink, or sunset
+## 10. Demo mode — keep, shrink, or sunset — ✅ COMPLETED 2026-07-02
+
+**Outcome:** grilled first, answered hardest: position (d) plus the sentinel
+unwind. Demo mode was deleted outright — API-only app, fail-fast startup,
+persist v4 wipe (ADR-0004, issue #8) — and the client then adopted the real
+server id as its identity, retiring ADR-0003's `'u-me'` sentinel from all
+domain rows with a pure, unit-tested friends normalization
+(`src/lib/friends.ts`) and a persist v5 wipe (ADR-0005, issue #9). PRD #7
+records the full decision set; both issues closed. This also settles the
+ADR-0003 debt probes in slices 4 and 5 (true Requester/Addressee orientation
+is stored; no sentinel-to-real rewrite awaits the pacts slice) and replaces
+the CLAUDE.md verification loop with the three-process real-stack workflow.
+The prompt below is kept as the historical record of what was probed — do
+not copy it into a new session.
 
 ```text
 Grill me on what offline demo mode should become as the backend absorbs
