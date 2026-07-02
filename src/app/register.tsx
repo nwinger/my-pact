@@ -11,14 +11,12 @@ import { Body, BodyBold, BodySemi, Display, Kicker, Small } from '@/components/u
 import { errorMessage } from '@/lib/api';
 import { detectTimezone } from '@/lib/dates';
 import { useAuth } from '@/store/use-auth';
-import { useStore } from '@/store/use-store';
 import { colors, radii, shadows } from '@/theme/tokens';
 
 export default function Register() {
   const insets = useSafeAreaInsets();
   const signUp = useAuth((s) => s.signUp);
   const signInSocial = useAuth((s) => s.signInSocial);
-  const updateProfile = useStore((s) => s.updateProfile);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -42,18 +40,12 @@ export default function Register() {
     setError(null);
     setBusy(true);
     try {
-      const profile = await signUp({
+      // signUp adopts the server identity into the domain store itself
+      await signUp({
         username: username.trim().toLowerCase(),
         email: email.trim().toLowerCase(),
         password,
         timezone: detectTimezone(),
-      });
-      // registration is server-side; sync the resulting profile
-      updateProfile({
-        username: profile.username,
-        email: profile.email,
-        timezone: profile.timezone,
-        notificationTime: profile.notificationTime,
       });
     } catch (e) {
       setError(errorMessage(e));

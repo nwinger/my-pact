@@ -14,6 +14,7 @@ import {
 } from '@/lib/api';
 import { gracePeriodKey, todayKey } from '@/lib/dates';
 import { reconcile } from '@/lib/engine';
+import { normalizeFriends, profileToUser } from '@/lib/friends';
 import { goalProgress } from '@/lib/streaks';
 import type {
   AppNotification,
@@ -26,9 +27,12 @@ import type {
 import { useAuth } from './use-auth';
 
 /**
- * The local identity sentinel — "me" in the on-device store (ADR-0003,
- * superseded by ADR-0005: the follow-up identity-adoption change replaces
- * this with the real server id).
+ * The pre-auth placeholder id (ADR-0005). It exists only so `useMe()` stays
+ * total while signed out; `adoptIdentity` replaces it with the real server
+ * id at session establishment. Domain rows never reference it:
+ * `refreshFriends` refuses to write friendships until adoption, and pact
+ * creation requires a cached Witness as keeper, which only exists
+ * post-adoption.
  */
 const ME = 'u-me';
 
@@ -75,6 +79,7 @@ type State = {
   /** in-memory only — "todayKey:graceKey" of the last scheduler pass */
   lastReconcileStamp: string | null;
 
+  adoptIdentity: (profile: ApiProfile) => void;
   checkIn: (pactId: string, opts?: { progressValue?: number; date?: string }) => void;
   createPact: (input: CreatePactInput) => Pact;
   cancelPact: (pactId: string) => void;
@@ -92,9 +97,10 @@ type State = {
   resetLocal: () => void;
 };
 
-// A fresh account starts bare: just me (the server profile overwrites this
-// row on sign-in), no pacts/friends/notifications. The domain stays local
-// until its server endpoints land, but it's the account's own data.
+// A fresh account starts bare: just the pre-auth placeholder (adoptIdentity
+// swaps it for the real server profile at sign-in), no pacts/friends/
+// notifications. The domain stays local until its server endpoints land,
+// but it's the account's own data.
 function freshState(): Pick<
   State,
   'users' | 'friendships' | 'pacts' | 'checkIns' | 'notifications' | 'remindersEnabled'
@@ -142,6 +148,20 @@ export const useStore = create<State>()(
       meId: ME,
       ...freshState(),
       lastReconcileStamp: null,
+
+      // Session establishment (ADR-0005): adopt the real server id as my
+      // identity — meId becomes the server id and the me-row is keyed by it.
+      // Idempotent; on first adoption it replaces the pre-auth placeholder.
+      adoptIdentity: (profile) => {
+        const { meId, users } = get();
+        set({
+          meId: profile.id,
+          users: [
+            profileToUser(profile),
+            ...users.filter((u) => u.id !== meId && u.id !== profile.id),
+          ],
+        });
+      },
 
       checkIn: (pactId, opts) => {
         const { checkIns, pacts, notifications, meId, users } = get();
@@ -316,64 +336,20 @@ export const useStore = create<State>()(
         if (!token) return;
         refreshing = true;
         try {
-          const { friends, incoming, outgoing } = await listFriends(token);
+          const payload = await listFriends(token);
 
-          const counterparts: User[] = [];
-          const seen = new Set<string>();
-          const cacheCounterpart = (p: ApiProfile) => {
-            if (seen.has(p.id)) return;
-            seen.add(p.id);
-            counterparts.push({
-              id: p.id,
-              username: p.username,
-              email: p.email,
-              timezone: p.timezone,
-              notificationTime: p.notificationTime,
-              tintIndex: p.tintIndex,
-            });
-          };
+          // Re-read identity after the await: adoption may have landed
+          // mid-flight, and a mid-flight sign-out resets it to the
+          // placeholder. Rows are only ever written under a real server id.
+          const { meId, users } = get();
+          if (meId === ME) return;
 
-          // ADR 0003: stitch every row's local side to the ME sentinel and cache
-          // the counterpart by its real server id, so the existing selectors
-          // (which locate "me" by matching ME) partition the graph correctly.
-          // requester/addressee here are synthetic — nothing client-side reads
-          // the server's real orientation.
-          const normalised: Friendship[] = [];
-          for (const item of friends) {
-            normalised.push({
-              id: item.friendshipId,
-              requesterId: ME,
-              addresseeId: item.user.id,
-              status: 'accepted',
-              createdAt: item.createdAt,
-            });
-            cacheCounterpart(item.user);
-          }
-          for (const item of incoming) {
-            normalised.push({
-              id: item.friendshipId,
-              requesterId: item.user.id,
-              addresseeId: ME,
-              status: 'pending',
-              createdAt: item.createdAt,
-            });
-            cacheCounterpart(item.user);
-          }
-          for (const item of outgoing) {
-            normalised.push({
-              id: item.friendshipId,
-              requesterId: ME,
-              addresseeId: item.user.id,
-              status: 'pending',
-              createdAt: item.createdAt,
-            });
-            cacheCounterpart(item.user);
-          }
+          const { friendships, counterparts } = normalizeFriends(payload, meId);
 
-          // Preserve the local ME user as-is; replace the counterpart cache.
-          const meUser = get().users.find((u) => u.id === ME);
+          // Preserve my own user row as-is; replace the counterpart cache.
+          const meUser = users.find((u) => u.id === meId);
           set({
-            friendships: normalised,
+            friendships,
             users: meUser ? [meUser, ...counterparts] : counterparts,
           });
         } catch (e) {
@@ -437,12 +413,14 @@ export const useStore = create<State>()(
         });
       },
 
-      resetLocal: () => set({ ...freshState(), lastReconcileStamp: null }),
+      // Back to the bare pre-auth state — including meId, so the previous
+      // account's identity never lingers on a shared device.
+      resetLocal: () => set({ meId: ME, ...freshState(), lastReconcileStamp: null }),
     }),
     {
       name: 'mypact-data',
-      // v4: demo mode removed (ADR-0004) — see `migrate`
-      version: 4,
+      // v5: identity adoption (ADR-0005) — meId is the real server id
+      version: 5,
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({
         meId: s.meId,
@@ -459,9 +437,11 @@ export const useStore = create<State>()(
         // active) before cancelPact voided both.
         return { ...merged, pacts: healMutualCancellation(merged.pacts) };
       },
-      // Every pre-v4 store restarts bare, unconditionally: demo datasets and
-      // the mode marker are gone, and ADR-0004 authorized discarding all
-      // prior local data rather than carrying migration paths for it.
+      // Every pre-v5 store restarts bare, unconditionally. v4 dropped demo
+      // data (ADR-0004 authorized discarding local data over carrying
+      // migration paths); v5 extends the same reset to rows keyed by the
+      // 'u-me' sentinel, which ADR-0005 retired from domain rows. A signed-in
+      // session re-adopts its identity via fetchMe on the next launch.
       migrate: () => ({ ...freshState(), meId: ME }) as never,
     }
   )

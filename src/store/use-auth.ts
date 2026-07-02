@@ -4,13 +4,7 @@ import { Platform } from 'react-native';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import {
-  ApiError,
-  signInEmail,
-  signOutSession,
-  signUpEmail,
-  type ApiProfile,
-} from '@/lib/api';
+import { ApiError, signInEmail, signOutSession, signUpEmail } from '@/lib/api';
 import { useStore } from '@/store/use-store';
 
 /**
@@ -43,14 +37,17 @@ type AuthState = {
   token: string | null;
   hydrated: boolean;
 
-  /** Resolves with the server profile. Throws ApiError. */
-  signIn: (email: string, password: string) => Promise<ApiProfile>;
+  /**
+   * Establishes the session and adopts the server identity into the domain
+   * store (ADR-0005). Throws ApiError.
+   */
+  signIn: (email: string, password: string) => Promise<void>;
   signUp: (input: {
     username: string;
     email: string;
     password: string;
     timezone: string;
-  }) => Promise<ApiProfile>;
+  }) => Promise<void>;
   /** Scaffolded: throws until OAuth credentials exist. */
   signInSocial: (provider: 'google' | 'apple') => Promise<void>;
   signOut: () => void;
@@ -68,14 +65,17 @@ export const useAuth = create<AuthState>()(
 
       signIn: async (email, password) => {
         const { token, profile } = await signInEmail({ email, password });
+        // Adopt the server identity BEFORE signedIn flips (ADR-0005): the
+        // protected stack mounts on signedIn and must never see a store
+        // still keyed by the pre-auth placeholder.
+        useStore.getState().adoptIdentity(profile);
         set({ signedIn: true, email: profile.email, provider: 'password', token });
-        return profile;
       },
 
       signUp: async ({ username, email, password, timezone }) => {
         const { token, profile } = await signUpEmail({ username, email, password, timezone });
+        useStore.getState().adoptIdentity(profile);
         set({ signedIn: true, email: profile.email, provider: 'password', token });
-        return profile;
       },
 
       signInSocial: async (provider) => {

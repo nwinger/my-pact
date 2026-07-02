@@ -1,12 +1,19 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
-// The server is the only thing under test here. Scoping `include` to server/**
-// keeps Vitest away from the React Native / Expo tree (JSX, native modules,
-// reanimated) which its esbuild-based transform is not set up to run.
+// Under test: the server routes, plus exactly one React-Native-free client
+// module — the pure friends normalization (ADR-0005). `include` whitelists
+// that single file rather than globbing src/** so Vitest never wanders into
+// the Expo tree (JSX, native modules, reanimated) which its esbuild-based
+// transform is not set up to run.
 export default defineConfig({
+  resolve: {
+    // Mirror tsconfig's `@/*` → `src/*` for the client module under test.
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
   test: {
     environment: 'node',
-    include: ['server/**/*.test.ts'],
+    include: ['server/**/*.test.ts', 'src/lib/friends.test.ts'],
     // DB-backed tests share one real local Postgres; run files serially so
     // seeded rows from one file never race another (mirrors humanlab's
     // jest --runInBand).

@@ -10,14 +10,12 @@ import { PressableScale } from '@/components/ui/pressable-scale';
 import { Body, BodyBold, BodySemi, Display, Kicker } from '@/components/ui/type';
 import { errorMessage } from '@/lib/api';
 import { useAuth } from '@/store/use-auth';
-import { useStore } from '@/store/use-store';
 import { colors, radii, shadows } from '@/theme/tokens';
 
 export default function Login() {
   const insets = useSafeAreaInsets();
   const signIn = useAuth((s) => s.signIn);
   const signInSocial = useAuth((s) => s.signInSocial);
-  const updateProfile = useStore((s) => s.updateProfile);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -36,14 +34,8 @@ export default function Login() {
     setError(null);
     setBusy(true);
     try {
-      const profile = await signIn(email.trim().toLowerCase(), password);
-      // sync the server profile into the local store
-      updateProfile({
-        username: profile.username,
-        email: profile.email,
-        timezone: profile.timezone,
-        notificationTime: profile.notificationTime,
-      });
+      // signIn adopts the server identity into the domain store itself
+      await signIn(email.trim().toLowerCase(), password);
     } catch (e) {
       setError(errorMessage(e));
     } finally {

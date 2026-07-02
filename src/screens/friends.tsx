@@ -46,14 +46,17 @@ export function FriendsScreen() {
   const [declineTarget, setDeclineTarget] = useState<{ id: string; name: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const activeTab = useTabs((s) => s.tab);
+  const meId = useStore((s) => s.meId);
 
   // Re-pull the social graph whenever the Friends tab becomes active. All
   // four tab scenes stay mounted (display-toggled), so there is no remount to
   // hang a load on — keying off the active tab is what lets a request sent
-  // from another device appear when you switch back to this tab.
+  // from another device appear when you switch back to this tab. Also keyed
+  // off meId: refreshFriends refuses to write rows before identity adoption
+  // (ADR-0005), so re-fire once adoption lands rather than sit stale.
   useEffect(() => {
     if (activeTab === 'friends') void refreshFriends();
-  }, [activeTab, refreshFriends]);
+  }, [activeTab, meId, refreshFriends]);
 
   // Manual pull-to-refresh. refreshFriends() never throws, so no catch needed.
   const onRefreshGraph = async () => {

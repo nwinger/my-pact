@@ -67,8 +67,9 @@ export default function RootLayout() {
     if (me.timezone !== timezone) useStore.getState().updateProfile({ timezone });
   }, [ready, signedIn, runReconcile]);
 
-  // Confirm the persisted session is still alive and pull the server
-  // profile into the local store; a revoked/expired token signs out.
+  // Confirm the persisted session is still alive and re-adopt the server
+  // identity (ADR-0005) — this is also what re-keys a store the v5 migration
+  // reset to bare; a revoked/expired token signs out.
   useEffect(() => {
     if (!ready || !signedIn) return;
     const token = useAuth.getState().token;
@@ -77,12 +78,7 @@ export default function RootLayout() {
       .then((p) => {
         // the device clock owns the timezone, not the server's stored copy
         const timezone = detectTimezone();
-        useStore.getState().updateProfile({
-          username: p.username,
-          email: p.email,
-          timezone,
-          notificationTime: p.notificationTime,
-        });
+        useStore.getState().adoptIdentity({ ...p, timezone });
         // the reminder may have been scheduled from the pre-sync defaults
         void syncDailyReminder(useStore.getState().remindersEnabled, p.notificationTime);
         if (p.timezone !== timezone) {

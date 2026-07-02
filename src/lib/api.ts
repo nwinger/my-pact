@@ -6,6 +6,10 @@
 
 import { Platform } from 'react-native';
 
+// Type-only (erased): friends.ts owns the payload shape so the normalizer
+// and this client can never drift; it must stay importable outside RN.
+import type { FriendsPayload } from '@/lib/friends';
+
 const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
 if (!API_URL) {
   throw new Error(
@@ -167,14 +171,8 @@ export type ApiFriendItem = {
 };
 
 /** GET /friends — the caller's social graph, partitioned server-side. */
-export async function listFriends(
-  token: string
-): Promise<{ friends: ApiFriendItem[]; incoming: ApiFriendItem[]; outgoing: ApiFriendItem[] }> {
-  const { data } = await call<{
-    friends: ApiFriendItem[];
-    incoming: ApiFriendItem[];
-    outgoing: ApiFriendItem[];
-  }>('/friends', { token });
+export async function listFriends(token: string): Promise<FriendsPayload> {
+  const { data } = await call<FriendsPayload>('/friends', { token });
   return data;
 }
 
