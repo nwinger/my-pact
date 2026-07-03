@@ -190,7 +190,37 @@ Grill me hardest on:
 
 ---
 
-## 5. Pacts — from device-local illusion to server-backed
+## 5. Pacts — from device-local illusion to server-backed — ✅ COMPLETED 2026-07-03
+
+**Outcome:** grilled to ten decisions; ADR-0006/0007/0008 record the durable
+ones, CONTEXT.md gained the Pact vocabulary (Creator, Solo/Mutual pact, Twin,
+Proposal, Partner), and PRD #10 (`ready-for-agent`) carries the full
+implementation spec. Mutual pacts become consent-gated: a Proposal is a single
+pending row owned by the proposer; acceptance materializes the partner's twin
+transactionally and re-anchors dates to the accepter's local today with
+`endDate = start + duration − 1` (fixing an off-by-one that made every
+"30-day" pact span 31 due days); decline is a hidden tombstone, withdrawal a
+soft-delete; either partner voiding an active mutual voids the other's active
+twin (completed twins stand). Solo pacts stay unilateral — the friendship is
+the keeper's consent. Remove leaves contracts standing; block severs all live
+contracts between the pair (ADR-0007). Keepers get full transparency as the
+end-state; this slice ships the keeping list + proposal surfaces with a
+terms-only keeper detail until check-ins sync. The engine narrows to
+`creatorUserId === meId` (killing the fabricated-twin miss-recording bug and
+pre-empting keeper-device fabrication over synced pacts), with interim
+creator-called `/complete` + `/settle` transition endpoints until the slice-7
+cron; keeper breach nudges stay honestly dark until then. Migration: persist
+v6 discard-all (v4/v5 precedent) — the sentinel rewrite was already moot per
+ADR-0005. No notification rows this slice: the four lying copy sites get
+honest copy; slice 8 owns the taxonomy (it needs new enum types for
+proposal/void events). Sync stays the hand-rolled friends idiom; the README's
+React Query promise is withdrawn (ADR-0008). Feeds slice 6: the server
+"today in tz X" helper, unique-index idempotent optimistic sealing, keeper
+`progressValue` visibility, reconciling device-local check-ins at sync, and
+the still-open backfill contradiction. Feeds slice 7: `/complete` + `/settle`
+become cron-internal or die; the keeper-nudge dark window ends. The prompt
+below is kept as the historical record of what was probed — do not copy it
+into a new session.
 
 ```text
 Grill me on my plan to move pacts server-side — the biggest gap in the
