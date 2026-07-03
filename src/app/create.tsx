@@ -16,6 +16,7 @@ import {
   Kicker,
   Small,
 } from '@/components/ui/type';
+import { errorMessage } from '@/lib/api';
 import { useFriends, useStore } from '@/store/use-store';
 import { useTabs } from '@/store/use-tabs';
 import type { PactType } from '@/store/types';
@@ -53,8 +54,15 @@ export default function CreatePact() {
       friends[0]?.user.id ??
       null
   );
+  // Mutual = consent-gated (ADR-0006): the submit becomes a PROPOSAL — one
+  // pending pact awaiting the partner — instead of an instantly-sealed
+  // contract, and every word below follows that switch.
   const [isMutual, setIsMutual] = useState(false);
   const [duration, setDuration] = useState(30);
+  // Sealing is a server write now: pend while it's in flight, and surface a
+  // server rejection (e.g. the keeper is no longer an accepted friend).
+  const [submitting, setSubmitting] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
 
   const valid = useMemo(() => {
     if (title.trim().length < 5) return false;
@@ -67,20 +75,34 @@ export default function CreatePact() {
   const toggleDay = (d: number) =>
     setDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort()));
 
-  const submit = () => {
-    if (!valid || !keeperId) return;
-    const pact = createPact({
-      title: title.trim(),
-      type,
-      daysOfWeek: type === 'frequency' ? days : undefined,
-      goalTarget: type === 'goal' ? Number(goalTarget) : undefined,
-      goalUnit: type === 'goal' ? goalUnit.trim() : undefined,
-      keeperUserId: keeperId,
-      isMutual,
-      durationDays: duration,
-    });
-    router.dismiss();
-    router.push(`/pact/${pact.id}`);
+  const submit = async () => {
+    if (!valid || !keeperId || submitting) return;
+    setSubmitting(true);
+    setServerError(null);
+    try {
+      const pact = await createPact({
+        title: title.trim(),
+        type,
+        daysOfWeek: type === 'frequency' ? days : undefined,
+        goalTarget: type === 'goal' ? Number(goalTarget) : undefined,
+        goalUnit: type === 'goal' ? goalUnit.trim() : undefined,
+        keeperUserId: keeperId,
+        isMutual,
+        durationDays: duration,
+      });
+      router.dismiss();
+      if (isMutual) {
+        // A proposal binds nothing yet — land on the shelf, where it sits
+        // under "Proposals awaiting a partner", not on a pact detail.
+        setTab('pacts');
+      } else {
+        router.push(`/pact/${pact.id}`);
+      }
+    } catch (e) {
+      setServerError(errorMessage(e));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const inputStyle = {
@@ -356,7 +378,9 @@ export default function CreatePact() {
             })}
           </ScrollView>
 
-          {/* mutual toggle */}
+          {/* mutual toggle — flips the submit from sealing to PROPOSING:
+              a mutual pact binds only by consent (ADR-0006), so it goes to
+              the partner as a pending Proposal they accept or decline */}
           <PressableScale
             onPress={() => setIsMutual((m) => !m)}
             accessibilityRole="switch"
@@ -375,7 +399,9 @@ export default function CreatePact() {
             <MutualIcon size={20} strokeWidth={2.2} color={isMutual ? colors.ink : colors.ink50} />
             <View style={{ flex: 1 }}>
               <BodyBold color={isMutual ? colors.ink : colors.ink50}>Make it mutual</BodyBold>
-              <Small color={colors.ink50}>You both commit, you both check in.</Small>
+              <Small color={colors.ink50}>
+                Sends a proposal — nothing binds either of you until they accept.
+              </Small>
             </View>
             <View
               style={{
@@ -398,21 +424,36 @@ export default function CreatePact() {
         <Animated.View entering={FadeInDown.delay(320).duration(400)} style={{ gap: 10 }}>
           <PressableScale
             onPress={submit}
-            disabled={!valid}
+            disabled={!valid || submitting}
             style={{
-              backgroundColor: valid ? colors.seal : colors.lineSoft,
+              backgroundColor: valid && !submitting ? colors.seal : colors.lineSoft,
               borderRadius: radii.pill,
               paddingVertical: 18,
               alignItems: 'center',
-              boxShadow: valid ? shadows.seal : undefined,
+              boxShadow: valid && !submitting ? shadows.seal : undefined,
             }}
           >
-            <BodyBold style={{ color: valid ? colors.white : colors.ink30, fontSize: 16 }}>
-              Seal the pact
+            <BodyBold
+              style={{ color: valid && !submitting ? colors.white : colors.ink30, fontSize: 16 }}
+            >
+              {isMutual
+                ? submitting
+                  ? 'Proposing…'
+                  : 'Propose the pact'
+                : submitting
+                  ? 'Sealing…'
+                  : 'Seal the pact'}
             </BodyBold>
           </PressableScale>
+          {serverError && (
+            <Body align="center" color={colors.failed} style={{ fontSize: 13 }}>
+              {serverError}
+            </Body>
+          )}
           <Body align="center" color={colors.ink50} style={{ fontSize: 13 }}>
-            Your keeper is notified the moment you miss a day.
+            {isMutual
+              ? 'They’ll find the proposal on their Pacts tab. The clock starts only when they accept.'
+              : 'Your keeper sees this pact from the moment it’s sealed.'}
           </Body>
         </Animated.View>
       </ScrollView>

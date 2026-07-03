@@ -7,9 +7,9 @@ Users commit to habits through accountability contracts — *pacts* — witnesse
 by a friend (the *keeper*). The app drives the loop with daily check-ins
 ("seals"), streaks, and breach notifications.
 
-The app is server-authoritative and online-only for writes (ADR-0004): auth
-and the friends graph run against the backend, and the remaining domain
-slices (pacts, check-ins, notifications) plug in behind the zustand stores
+The app is server-authoritative and online-only for writes (ADR-0004): auth,
+the friends graph and pacts run against the backend, and the remaining
+domain slices (check-ins, notifications) plug in behind the zustand stores
 without touching the screens.
 
 ## Features
@@ -21,17 +21,30 @@ without touching the screens.
   scaffolded behind OAuth credentials). `EXPO_PUBLIC_API_URL` is required —
   the app fails fast at startup without it.
 - **Pacts** — frequency (daily / chosen weekdays) and goal (target + unit)
-  pacts, mutual pacts that create a linked twin where both sides check in,
-  keeper selection from accepted friends, 21/30/60/90-day durations,
-  irreversible cancellation.
+  pacts, stored server-side: keeper selection from accepted friends,
+  21/30/60/90-day durations (the server authors the dates — an n-day pact
+  spans exactly n due days, anchored to the creator's timezone), creator-only
+  irreversible cancellation. Pacts naming you appear under **Keeping** with a
+  terms-only card and detail (title, cadence, dates, status, creator) — no
+  progress is fabricated until check-ins sync. "Make it mutual" sends a
+  consent-gated **Proposal** (ADR-0006): one pending pact the Partner
+  discovers under incoming Proposals on the Pacts tab and accepts (their
+  twin materializes and the dates re-anchor to *their* today, span
+  preserved) or declines (vanishes for both sides — re-proposing is
+  allowed); the proposer can withdraw without a trace, and nothing accrues
+  while pending. Voiding an active mutual twin voids the other unless it
+  already completed.
 - **Check-ins** — wax-seal stamping with particle burst + haptics, goal
   progress logging via bottom sheet, one check-in per pact per day, a
   00:00–00:30 grace window to seal yesterday, no backfill beyond 7 days.
 - **Accountability engine** — a local stand-in for the backend schedulers
-  runs on every launch: missed required days are recorded as failed
-  check-ins, breach notifications escalate at 3+ consecutive misses, goal
-  pacts complete on reaching target, expired pacts settle as
-  completed/incomplete.
+  runs on every launch, over pacts the signed-in user *created* (a kept
+  pact's check-ins live on the creator's device — nothing is fabricated from
+  their absence): missed required days are recorded as failed check-ins,
+  breach notifications escalate at 3+ consecutive misses, goal pacts
+  complete on reaching target and expired frequency pacts settle as
+  completed/incomplete — both durably, through interim server endpoints
+  (`/pacts/:id/complete`, `/pacts/:id/settle`) followed by a refresh.
 - **Streaks & stats** — streak math respects each pact's required weekdays;
   profile shows streak, success rate, seals pressed, pacts made, keeper
   count, witnesses.
@@ -94,7 +107,8 @@ src/
   lib/            date helpers, streak math, scheduler engine, reminders,
                   hydration, api client (api.ts)
   theme/          design tokens (colors, fonts, radii, shadows)
-server/           Hono backend: Better Auth, drizzle schema, /users + /friends routes
+server/           Hono backend: Better Auth, drizzle schema, /users + /friends
+                  + /pacts routes
 api/              Vercel Functions entry (catch-all → the Hono app)
 drizzle/          generated SQL migrations
 supabase/         local Supabase config (`supabase start`, ports 553xx)
@@ -110,13 +124,27 @@ where inactive tab scenes stay visible, and behaves identically on native.
 ## Backend status
 
 The backend (Hono + Drizzle/Supabase + Better Auth on Vercel — see
-`docs/adr/0001-backend-stack.md`) now handles auth and the friends graph
-for real: registration, login, bearer sessions, `GET/PATCH /users/me`,
-witness lookup and the friendship request lifecycle. The remaining domain
-tables (pacts, check-ins, notifications) exist in the schema with the
-client's hardened rules; their endpoints are the next step, after which
-store actions become React Query mutations and `src/lib/engine.ts` retires
-in favor of server-side cron schedulers.
+`docs/adr/0001-backend-stack.md`) now handles auth, the friends graph and
+pacts for real: registration, login, bearer sessions, `GET/PATCH /users/me`,
+witness lookup, the friendship request lifecycle, and pacts —
+create/list/cancel plus two explicitly-interim creator-only transitions
+(`/pacts/:id/complete` for goal pacts, `/pacts/:id/settle` for expired
+frequency pacts) that make status changes durable server facts until the
+cron slice re-authors them. The pacts list serves both roles (created and
+kept) with a counterpart-profile sidecar. Mutual pacts are consent-gated
+Proposals (ADR-0006): a mutual create yields one *pending* row,
+`/pacts/:id/accept` (keeper-only, live friendship required at that moment)
+transactionally materializes the partner's twin with dates re-anchored to
+the accepter's timezone, `/pacts/:id/decline` tombstones it invisibly, a
+creator's cancel on a pending row withdraws it, and cancelling an active
+mutual twin cascades to the partner's active twin (completed twins stand —
+the cascade lives server-side in `server/lib/severance.ts`, reused by the
+block mutation next). Pact sync follows the friends-slice
+idiom — hand-rolled zustand actions; React Query was considered and declined
+(ADR-0008). The remaining domain tables (check-ins, notifications) exist in
+the schema with the client's hardened rules; their endpoints are the next
+step, after which `src/lib/engine.ts` — already narrowed to pacts the
+signed-in user created — retires in favor of server-side cron schedulers.
 
 An earlier version of this section promised that offline demo mode would
 keep working throughout the backend build-out. That promise is withdrawn —

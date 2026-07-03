@@ -6,9 +6,11 @@
 
 import { Platform } from 'react-native';
 
-// Type-only (erased): friends.ts owns the payload shape so the normalizer
-// and this client can never drift; it must stay importable outside RN.
+// Type-only (erased): friends.ts / pacts.ts own the payload shapes so the
+// normalizers and this client can never drift; they must stay importable
+// outside RN.
 import type { FriendsPayload } from '@/lib/friends';
+import type { ApiPact, PactsPayload } from '@/lib/pacts';
 
 const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
 if (!API_URL) {
@@ -206,4 +208,69 @@ export async function blockFriendApi(token: string, friendshipId: string): Promi
 /** DELETE /friends/:id — either participant removes (soft-deletes) the bond. */
 export async function removeFriendApi(token: string, friendshipId: string): Promise<void> {
   await call(`/friends/${friendshipId}`, { method: 'DELETE', token });
+}
+
+/**
+ * Input for `POST /pacts`. The server authors all dates: the client sends
+ * only a duration (start = today in the creator's stored IANA timezone,
+ * end = start + duration − 1). With `isMutual: true` the create is a
+ * Proposal (ADR-0006): the server returns a single *pending* row and the
+ * dates are provisional — acceptance re-anchors them to the Partner's today.
+ */
+export type CreatePactBody = {
+  title: string;
+  description?: string;
+  type: 'frequency' | 'goal';
+  daysOfWeek?: number[];
+  goalTarget?: number;
+  goalUnit?: string;
+  keeperUserId: string;
+  isMutual?: boolean;
+  durationDays: number;
+  tintIndex: number;
+};
+
+/** GET /pacts — every pact I created or keep, plus the counterpart sidecar. */
+export async function listPacts(token: string): Promise<PactsPayload> {
+  const { data } = await call<PactsPayload>('/pacts', { token });
+  return data;
+}
+
+/** POST /pacts — create a solo pact; returns the server-authored row. */
+export async function createPactApi(token: string, body: CreatePactBody): Promise<ApiPact> {
+  const { data } = await call<{ pact: ApiPact }>('/pacts', { method: 'POST', token, body });
+  return data.pact;
+}
+
+/** POST /pacts/:id/accept — the Partner (keeper of the pending row) consents: the twin materializes, both rows go active. */
+export async function acceptPactApi(token: string, pactId: string): Promise<void> {
+  await call(`/pacts/${pactId}/accept`, { method: 'POST', token });
+}
+
+/** POST /pacts/:id/decline — the Partner refuses; the proposal vanishes for both sides. */
+export async function declinePactApi(token: string, pactId: string): Promise<void> {
+  await call(`/pacts/${pactId}/decline`, { method: 'POST', token });
+}
+
+/**
+ * POST /pacts/:id/cancel — the creator irreversibly breaks an active pact
+ * (a mutual twin's void cascades to its partner's active twin server-side),
+ * or withdraws a pending proposal without a trace.
+ */
+export async function cancelPactApi(token: string, pactId: string): Promise<void> {
+  await call(`/pacts/${pactId}/cancel`, { method: 'POST', token });
+}
+
+/** POST /pacts/:id/complete — interim: the creator completes a goal pact. */
+export async function completePactApi(token: string, pactId: string): Promise<void> {
+  await call(`/pacts/${pactId}/complete`, { method: 'POST', token });
+}
+
+/** POST /pacts/:id/settle — interim: the creator settles an expired frequency pact. */
+export async function settlePactApi(
+  token: string,
+  pactId: string,
+  verdict: 'completed' | 'incomplete'
+): Promise<void> {
+  await call(`/pacts/${pactId}/settle`, { method: 'POST', token, body: { verdict } });
 }

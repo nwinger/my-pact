@@ -11,7 +11,8 @@ npx expo start          # native (Expo Go / dev build)
 npx tsc --noEmit        # typecheck (client + server)
 npx expo lint           # eslint (React Compiler rules enabled)
 npm test                # vitest — server route tests (needs supabase running)
-                        # + the pure client friends-normalization unit tests
+                        # + the pure client unit tests (friends/pacts
+                        # normalization, scheduler engine)
 
 supabase start          # local Postgres (ports 553xx — needs Docker/OrbStack)
 npm run db:migrate      # apply drizzle/ migrations
@@ -26,10 +27,12 @@ backend in `server/` (see `docs/adr/0001-backend-stack.md` and
 `docs/backend-setup.md`). The app is **API-only** (ADR-0004): auth is real
 (email+password against Better Auth, bearer token in secure storage), the
 client adopts the real server id as `meId` at sign-in (ADR-0005 — domain
-rows never carry the `'u-me'` pre-auth placeholder), the friends graph is
-server-side, and `EXPO_PUBLIC_API_URL` is required — put
-it in `.env` (copy `.env.example`). Booting without it fails fast at module
-load; there is no offline or demo fallback. Pacts, check-ins and
+rows never carry the `'u-me'` pre-auth placeholder), the friends graph and
+pacts are server-side (solo pacts: create/list/cancel + interim
+complete/settle, keeper read access; mutual creates are rejected until
+Proposals land — ADR-0006/0007/0008), and `EXPO_PUBLIC_API_URL` is required
+— put it in `.env` (copy `.env.example`). Booting without it fails fast at
+module load; there is no offline or demo fallback. Check-ins and
 notifications are still on-device (account-scoped, cleared on sign-out)
 until their endpoints land. The session guard is `Stack.Protected` in
 `src/app/_layout.tsx`.
@@ -50,9 +53,13 @@ until their endpoints land. The session guard is `Stack.Protected` in
   `Date.now()` — plain counters collide with persisted data after relaunch.
 - **Scheduler engine** (`src/lib/engine.ts`): on launch (signed in +
   hydrated), `runReconcile()` records failed check-ins for missed required
-  days, emits breach/completion notifications, and settles expired pacts.
-  It mirrors the future backend cron jobs — keep its rules in sync with the
-  spec in README.
+  days and emits breach notifications — for pacts the signed-in user
+  *created* only (a kept pact's check-ins live on the creator's device;
+  nothing is fabricated from their absence). Durable status transitions
+  (goal completion, end-of-term settlement) are not flipped locally: the
+  store pushes them through the interim `/pacts/:id/complete` and
+  `/pacts/:id/settle` endpoints, then refreshes. It mirrors the future
+  backend cron jobs — keep its rules in sync with the spec in README.
 - **Design tokens** live in `src/theme/tokens.ts` — colors (ink/paper/pastel
   tints), Fraunces + Quicksand font families, radii, shadows (as `boxShadow`
   strings, supported cross-platform on the new architecture). No hard-coded

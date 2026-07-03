@@ -34,6 +34,8 @@ export function Chip({ label, bg = colors.paperDeep, fg = colors.ink, outlined, 
 }
 
 const statusMap: Record<PactStatus, { label: string; bg: string; fg: string }> = {
+  // a Proposal: a mutual pact awaiting the Partner's answer — nothing binds yet
+  pending: { label: 'Proposed', bg: colors.overdueSoft, fg: colors.overdue },
   active: { label: 'Active', bg: colors.activeSoft, fg: colors.active },
   completed: { label: 'Completed', bg: colors.completedSoft, fg: colors.completed },
   incomplete: { label: 'Incomplete', bg: colors.failedSoft, fg: colors.failed },

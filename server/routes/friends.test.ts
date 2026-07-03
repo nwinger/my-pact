@@ -5,8 +5,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { auth } from '../auth';
 import { db } from '../db';
-import { friendships, user } from '../db/schema';
-import { api, asAnon, asUser, cleanupCreated, seedUser, trackFriendship } from '../test/harness';
+import { friendships, pacts, user } from '../db/schema';
+import { addDaysToKey, todayInTimezone } from '../lib/dates';
+import { api, asAnon, asUser, cleanupCreated, seedUser, trackFriendship, trackPact } from '../test/harness';
 
 type UserRow = typeof user.$inferSelect;
 type SendBody = { result: 'not_found' | 'self' | 'duplicate' | 'sent' };
@@ -548,6 +549,247 @@ describe('friends routes', () => {
       const id = randomUUID();
       expect((await api(`/friends/${id}/block`, { method: 'POST' })).status).toBe(401);
       expect((await api(`/friends/${id}`, { method: 'DELETE' })).status).toBe(401);
+    });
+  });
+
+  // ── Issue #13: block severs contracts between the pair, remove leaves them ──
+  describe('block severance & remove neutrality — pacts between the pair (ADR-0007)', () => {
+    /** Anna and Bo, joined by a live accepted bond, ready to carry pacts. */
+    async function seedBondedPair() {
+      const a = await seedUser({ name: 'Anna' });
+      const b = await seedUser({ name: 'Bo' });
+      const [bond] = await db
+        .insert(friendships)
+        .values({ requesterId: a.id, addresseeId: b.id, status: 'accepted' })
+        .returning();
+      trackFriendship(bond.id);
+      return { a, b, bond };
+    }
+
+    /** Insert a pact row directly (for preconditions the API refuses to author). */
+    async function seedPact(
+      overrides: Partial<typeof pacts.$inferInsert> & { creatorUserId: string; keeperUserId: string }
+    ) {
+      const today = todayInTimezone('UTC');
+      const [row] = await db
+        .insert(pacts)
+        .values({
+          title: 'Seeded pact for tests',
+          type: 'frequency',
+          status: 'active',
+          startDate: today,
+          endDate: addDaysToKey(today, 29),
+          daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+          isMutual: false,
+          tintIndex: 0,
+          ...overrides,
+        })
+        .returning();
+      trackPact(row.id);
+      return row;
+    }
+
+    /** Two linked twins of one mutual pact between the pair (a creates one, b the other). */
+    async function seedTwins(a: UserRow, b: UserRow, statusOfBs: 'active' | 'completed' = 'active') {
+      const mutualPactId = randomUUID();
+      const twinA = await seedPact({ creatorUserId: a.id, keeperUserId: b.id, isMutual: true, mutualPactId });
+      const twinB = await seedPact({
+        creatorUserId: b.id,
+        keeperUserId: a.id,
+        isMutual: true,
+        mutualPactId,
+        status: statusOfBs,
+      });
+      return { twinA, twinB };
+    }
+
+    /** A pending Proposal from `proposer` to `partner` (ADR-0006: one pending mutual row). */
+    function seedProposal(proposerId: string, partnerId: string) {
+      return seedPact({
+        creatorUserId: proposerId,
+        keeperUserId: partnerId,
+        status: 'pending',
+        isMutual: true,
+        mutualPactId: randomUUID(),
+      });
+    }
+
+    type PactItem = { id: string; creatorUserId: string; keeperUserId: string; status: string };
+
+    /** GET /pacts as `u` (asserts 200) — the list read both users' shelves derive from. */
+    async function pactsAs(u: UserRow): Promise<PactItem[]> {
+      asUser(u);
+      const { status, json } = await api('/pacts');
+      expect(status).toBe(200);
+      return (await json<{ pacts: PactItem[] }>()).pacts;
+    }
+
+    const statusOf = (list: PactItem[], id: string) => list.find((p) => p.id === id)?.status;
+
+    it('block cancels the blocker’s solo pact kept by the blocked user', async () => {
+      const { a, b, bond } = await seedBondedPair();
+      const solo = await seedPact({ creatorUserId: a.id, keeperUserId: b.id });
+
+      asUser(a);
+      expect((await api(`/friends/${bond.id}/block`, { method: 'POST' })).status).toBe(200);
+
+      // Cancelled for both parties: off the shelf, into the creator's Archive.
+      expect(statusOf(await pactsAs(a), solo.id)).toBe('cancelled');
+      expect(statusOf(await pactsAs(b), solo.id)).toBe('cancelled');
+    });
+
+    it('block cancels the blocked user’s solo pact when the blocker was merely its keeper (accepted collateral)', async () => {
+      const { a, b, bond } = await seedBondedPair();
+      const bosSolo = await seedPact({ creatorUserId: b.id, keeperUserId: a.id });
+
+      asUser(a);
+      expect((await api(`/friends/${bond.id}/block`, { method: 'POST' })).status).toBe(200);
+
+      // Deliberate per ADR-0007, not a bug: Bo's pact dies through no act of
+      // Bo's — a live accountability contract is contact, and Anna ended it.
+      expect(statusOf(await pactsAs(b), bosSolo.id)).toBe('cancelled');
+    });
+
+    it('block voids both active mutual twins, whichever participant blocks', async () => {
+      const { a, b, bond } = await seedBondedPair();
+      const { twinA, twinB } = await seedTwins(a, b);
+
+      asUser(b); // the addressee blocks — severance is pair-based, not role-based
+      expect((await api(`/friends/${bond.id}/block`, { method: 'POST' })).status).toBe(200);
+
+      for (const party of [a, b]) {
+        const list = await pactsAs(party);
+        expect(statusOf(list, twinA.id)).toBe('cancelled');
+        expect(statusOf(list, twinB.id)).toBe('cancelled');
+      }
+    });
+
+    it('a twin that already completed stays completed through its partner’s block-driven cancel', async () => {
+      const { a, b, bond } = await seedBondedPair();
+      const { twinA, twinB } = await seedTwins(a, b, 'completed');
+
+      asUser(a);
+      expect((await api(`/friends/${bond.id}/block`, { method: 'POST' })).status).toBe(200);
+
+      const list = await pactsAs(b);
+      expect(statusOf(list, twinA.id)).toBe('cancelled');
+      // A finished contract cannot be retroactively voided — not even by a block.
+      expect(statusOf(list, twinB.id)).toBe('completed');
+    });
+
+    it('block declines pending Proposals in BOTH directions — invisible to both sides, kept on the books', async () => {
+      const { a, b, bond } = await seedBondedPair();
+      const annasProposal = await seedProposal(a.id, b.id);
+      const bosProposal = await seedProposal(b.id, a.id);
+
+      asUser(a);
+      expect((await api(`/friends/${bond.id}/block`, { method: 'POST' })).status).toBe(200);
+
+      // Declined tombstones reach no client: gone from both lists entirely.
+      for (const party of [a, b]) {
+        const ids = (await pactsAs(party)).map((p) => p.id);
+        expect(ids).not.toContain(annasProposal.id);
+        expect(ids).not.toContain(bosProposal.id);
+      }
+      // The storage contract has no external surface (invisible BY DESIGN):
+      // declined, not deleted — future re-proposal throttling reads it.
+      for (const id of [annasProposal.id, bosProposal.id]) {
+        const [tombstone] = await db.select().from(pacts).where(eq(pacts.id, id));
+        expect(tombstone.status).toBe('declined');
+        expect(tombstone.deletedAt).toBeNull();
+      }
+    });
+
+    it('block leaves both users’ contracts with third parties untouched', async () => {
+      const { a, b, bond } = await seedBondedPair();
+      const clara = await seedUser({ name: 'Clara' });
+      const annasWithClara = await seedPact({ creatorUserId: a.id, keeperUserId: clara.id });
+      const bosKeptByClara = await seedPact({ creatorUserId: clara.id, keeperUserId: b.id });
+      const bosProposalToClara = await seedProposal(b.id, clara.id);
+
+      asUser(a);
+      expect((await api(`/friends/${bond.id}/block`, { method: 'POST' })).status).toBe(200);
+
+      expect(statusOf(await pactsAs(a), annasWithClara.id)).toBe('active');
+      const bosList = await pactsAs(b);
+      expect(statusOf(bosList, bosKeptByClara.id)).toBe('active');
+      expect(statusOf(bosList, bosProposalToClara.id)).toBe('pending');
+    });
+
+    it('severance is atomic with the block itself: a failed block leaves nothing half-severed', async () => {
+      // A declined tombstone AND a fresh live bond coexist for the pair
+      // (the pair index excludes declined rows). Blocking the TOMBSTONE
+      // flips it non-declined, colliding with the live bond — the one
+      // constructible failure, raised by the LAST statement of the block
+      // transaction, after the severance writes. 409 must roll them back.
+      const { a, b } = await seedBondedPair();
+      const [tombstone] = await db
+        .insert(friendships)
+        .values({ requesterId: b.id, addresseeId: a.id, status: 'declined' })
+        .returning();
+      trackFriendship(tombstone.id);
+      const solo = await seedPact({ creatorUserId: a.id, keeperUserId: b.id });
+      const proposal = await seedProposal(a.id, b.id);
+
+      asUser(a);
+      expect((await api(`/friends/${tombstone.id}/block`, { method: 'POST' })).status).toBe(409);
+
+      const list = await pactsAs(a);
+      expect(statusOf(list, solo.id)).toBe('active');
+      expect(statusOf(list, proposal.id)).toBe('pending');
+      expect((await rowById(tombstone.id)).status).toBe('declined');
+    });
+
+    it('after a block, neither side’s next list read holds any live contract between the pair', async () => {
+      const { a, b, bond } = await seedBondedPair();
+      // The full severance matrix at once: solo each way, twins, proposals each way.
+      await seedPact({ creatorUserId: a.id, keeperUserId: b.id });
+      await seedPact({ creatorUserId: b.id, keeperUserId: a.id });
+      await seedTwins(a, b);
+      await seedProposal(a.id, b.id);
+      await seedProposal(b.id, a.id);
+
+      asUser(a);
+      expect((await api(`/friends/${bond.id}/block`, { method: 'POST' })).status).toBe(200);
+
+      for (const [party, counterpart] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        const betweenPair = (await pactsAs(party)).filter(
+          (p) => p.creatorUserId === counterpart.id || p.keeperUserId === counterpart.id
+        );
+        // The four once-active contracts survive as Archive rows; nothing is
+        // live (active or pending), and the declined proposals are gone.
+        expect(betweenPair).toHaveLength(4);
+        expect(betweenPair.every((p) => p.status === 'cancelled')).toBe(true);
+      }
+    });
+
+    it('remove (unfriend) leaves active pacts, keeper read access, and pending Proposals untouched', async () => {
+      const { a, b, bond } = await seedBondedPair();
+      const solo = await seedPact({ creatorUserId: a.id, keeperUserId: b.id });
+      const { twinA, twinB } = await seedTwins(a, b);
+      const proposal = await seedProposal(a.id, b.id);
+
+      asUser(a);
+      expect((await api(`/friends/${bond.id}`, { method: 'DELETE' })).status).toBe(200);
+
+      // Housekeeping, not severance: every contract stands, at its own status —
+      // including for Bo, whose keeper read access outlives the friendship.
+      for (const party of [a, b]) {
+        const list = await pactsAs(party);
+        expect(statusOf(list, solo.id)).toBe('active');
+        expect(statusOf(list, twinA.id)).toBe('active');
+        expect(statusOf(list, twinB.id)).toBe('active');
+        expect(statusOf(list, proposal.id)).toBe('pending');
+      }
+
+      // The pending Proposal survives but is unacceptable while unfriended —
+      // the accept route's commitment-time guard is the whole mechanism (no
+      // sweep code); re-adding revives it (covered by the pacts route tests).
+      asUser(b);
+      expect((await api(`/pacts/${proposal.id}/accept`, { method: 'POST' })).status).toBe(409);
     });
   });
 });

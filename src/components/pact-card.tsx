@@ -6,6 +6,7 @@ import { PressableScale } from '@/components/ui/pressable-scale';
 import { ProgressRing } from '@/components/ui/progress-ring';
 import { Body, BodyBold, Heading, HeadingItalic, Kicker, Small } from '@/components/ui/type';
 import { StatusChip } from '@/components/ui/chip';
+import { formatShort } from '@/lib/dates';
 import { currentStreak, goalProgress, progressRatio } from '@/lib/streaks';
 import { useMe, useStore, useUser } from '@/store/use-store';
 import type { Pact } from '@/store/types';
@@ -17,16 +18,21 @@ const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
  * A pact rendered as a little signed contract / ticket:
  * tinted header band, serif title, perforation row of day-letters,
  * keeper "signature" in italic, progress ring.
+ *
+ * The KEEPER sees the contract sheet only — title, cadence, dates, status,
+ * creator. Check-ins live on the creator's device until they sync, so any
+ * progress ring, streak or tally here would be fabricated from absent data
+ * (a flawless friend rendered as "0% kept").
  */
 export function PactCard({ pact, index = 0 }: { pact: Pact; index?: number }) {
   const checkIns = useStore((s) => s.checkIns);
   const me = useMe();
   const keeper = useUser(pact.keeperUserId);
   const creator = useUser(pact.creatorUserId);
-  const iAmKeeper = pact.keeperUserId === me.id;
+  const iAmKeeper = pact.keeperUserId === me.id && pact.creatorUserId !== me.id;
   const tint = ticketTints[pact.tintIndex % ticketTints.length];
-  const ratio = progressRatio(pact, checkIns);
-  const streak = currentStreak(pact, checkIns);
+  const ratio = iAmKeeper ? 0 : progressRatio(pact, checkIns);
+  const streak = iAmKeeper ? 0 : currentStreak(pact, checkIns);
 
   return (
     <PressableScale
@@ -73,7 +79,7 @@ export function PactCard({ pact, index = 0 }: { pact: Pact; index?: number }) {
                   : 'Weekly pact'}
           </Kicker>
         </View>
-        {streak > 1 && pact.status === 'active' && (
+        {!iAmKeeper && streak > 1 && pact.status === 'active' && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
             <FlameIcon size={15} color={colors.seal} fill={colors.seal} strokeWidth={1.5} />
             <BodyBold style={{ fontSize: 13 }}>{streak}</BodyBold>
@@ -91,18 +97,20 @@ export function PactCard({ pact, index = 0 }: { pact: Pact; index?: number }) {
               </Body>
             ) : null}
           </View>
-          <ProgressRing
-            ratio={ratio}
-            size={54}
-            stroke={5}
-            color={colors.ink}
-            delay={150 + index * 90}
-          >
-            <Small>{Math.round(ratio * 100)}%</Small>
-          </ProgressRing>
+          {!iAmKeeper && (
+            <ProgressRing
+              ratio={ratio}
+              size={54}
+              stroke={5}
+              color={colors.ink}
+              delay={150 + index * 90}
+            >
+              <Small>{Math.round(ratio * 100)}%</Small>
+            </ProgressRing>
+          )}
         </View>
 
-        {/* perforation: day letters or goal tally */}
+        {/* perforation: day letters (cadence — part of the terms) or goal tally */}
         {pact.type === 'frequency' ? (
           <View style={{ flexDirection: 'row', gap: 6 }}>
             {DAY_LABELS.map((d, i) => {
@@ -125,6 +133,14 @@ export function PactCard({ pact, index = 0 }: { pact: Pact; index?: number }) {
                 </View>
               );
             })}
+          </View>
+        ) : iAmKeeper ? (
+          // terms only: the target, without a tally fabricated from absent seals
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5 }}>
+            <Small color={colors.ink50}>Reaching for</Small>
+            <HeadingItalic style={{ fontSize: 18 }}>
+              {pact.goalTarget} {pact.goalUnit}
+            </HeadingItalic>
           </View>
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5 }}>
@@ -155,7 +171,13 @@ export function PactCard({ pact, index = 0 }: { pact: Pact; index?: number }) {
               {(iAmKeeper ? creator?.username : keeper?.username) ?? 'a friend'}
             </HeadingItalic>
           </View>
-          {pact.status !== 'active' && <StatusChip status={pact.status} />}
+          {pact.status !== 'active' ? (
+            <StatusChip status={pact.status} />
+          ) : iAmKeeper ? (
+            <Small color={colors.ink50}>
+              {formatShort(pact.startDate)} → {formatShort(pact.endDate)}
+            </Small>
+          ) : null}
         </View>
       </View>
     </PressableScale>

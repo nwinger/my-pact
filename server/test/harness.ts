@@ -6,7 +6,7 @@ import { vi } from 'vitest';
 import { app } from '../app';
 import { auth } from '../auth';
 import { db } from '../db';
-import { friendships, user } from '../db/schema';
+import { friendships, pacts, user } from '../db/schema';
 
 type NewUser = typeof user.$inferInsert;
 type UserRow = typeof user.$inferSelect;
@@ -78,6 +78,7 @@ export function asAnon(): void {
 
 const createdUserIds: string[] = [];
 const createdFriendshipIds: string[] = [];
+const createdPactIds: string[] = [];
 
 /** Insert a real user row (unique id + email) and track it for cleanup. */
 export async function seedUser(overrides: Partial<NewUser> = {}): Promise<UserRow> {
@@ -101,11 +102,21 @@ export function trackFriendship(id: string): void {
   createdFriendshipIds.push(id);
 }
 
+/** Register a pact id so cleanupCreated() removes it before its users. */
+export function trackPact(id: string): void {
+  createdPactIds.push(id);
+}
+
 /**
  * Delete everything this harness created, children before parents so foreign
- * keys stay satisfied: tracked friendships first, then tracked users.
+ * keys stay satisfied: tracked pacts and friendships first, then tracked
+ * users.
  */
 export async function cleanupCreated(): Promise<void> {
+  if (createdPactIds.length > 0) {
+    await db.delete(pacts).where(inArray(pacts.id, createdPactIds));
+    createdPactIds.length = 0;
+  }
   if (createdFriendshipIds.length > 0) {
     await db.delete(friendships).where(inArray(friendships.id, createdFriendshipIds));
     createdFriendshipIds.length = 0;

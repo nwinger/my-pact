@@ -18,7 +18,13 @@ export type Friendship = {
 };
 
 export type PactType = 'frequency' | 'goal';
-export type PactStatus = 'active' | 'completed' | 'incomplete' | 'cancelled';
+/**
+ * 'pending' is a mutual pact awaiting the Partner's consent (a Proposal,
+ * ADR-0006); solo pacts are never pending. The server also holds 'declined'
+ * tombstones, but those are excluded from every list read — 'declined' never
+ * reaches the client, so it is deliberately absent here.
+ */
+export type PactStatus = 'pending' | 'active' | 'completed' | 'incomplete' | 'cancelled';
 
 export type Pact = {
   id: string;

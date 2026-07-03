@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../context';
 import { db } from '../db';
 import { friendships, user } from '../db/schema';
+import { severPactsBetween } from '../lib/severance';
 import { profile } from './shared';
 
 export const friends = new Hono<AppEnv>();
@@ -230,6 +231,15 @@ friends.post('/:id/decline', async (c) => {
  * (an outsider is 403, missing/soft-deleted is 404). A blocked row stays live
  * and non-declined, so it is still covered by the pair index: it hides the bond
  * from GET /friends and blocks any further request for the pair.
+ *
+ * Block is SEVERANCE (ADR-0007): a live accountability contract IS contact,
+ * so one transaction flips the bond AND severs every live contract between
+ * the pair — active pacts (solo in either direction, both mutual twins)
+ * cancel through the ADR-0006 cascade, whose guard keeps a completed twin
+ * completed, and pending Proposals in both directions decline into invisible
+ * tombstones. Contrast DELETE below: remove is housekeeping and touches no
+ * pact. Severed rows leave both users' shelves on their next list read —
+ * cancelled pacts land in the creator's Archive, declined proposals vanish.
  */
 friends.post('/:id/block', async (c) => {
   const me = c.get('user');
@@ -240,10 +250,16 @@ friends.post('/:id/block', async (c) => {
   if (!isParticipant(row, me.id)) return c.json({ error: 'Forbidden' }, 403);
 
   try {
-    await db
-      .update(friendships)
-      .set({ status: 'blocked', updatedAt: new Date() })
-      .where(eq(friendships.id, row.id));
+    await db.transaction(async (tx) => {
+      // Severance first, flip last: the flip is the one statement that can
+      // fail (the pair-index collision below), so the failure path proves
+      // the severance writes roll back with it — nothing half-severed.
+      await severPactsBetween(tx, row.requesterId, row.addresseeId);
+      await tx
+        .update(friendships)
+        .set({ status: 'blocked', updatedAt: new Date() })
+        .where(eq(friendships.id, row.id));
+    });
   } catch (e) {
     // Blocking a declined tombstone while a fresh live bond already exists for
     // the pair would make two rows collide on the ADR-0002 pair index; report
@@ -260,6 +276,12 @@ friends.post('/:id/block', async (c) => {
  * or already soft-deleted row is 404. Because the pair index ignores
  * soft-deleted rows, either user may re-add the other afterwards — a fresh live
  * row is created next to this tombstone (ADR-0002).
+ *
+ * Remove is HOUSEKEEPING (ADR-0007): it touches no pact. Active pacts and
+ * keeper read access continue (the contract has its own term), and pending
+ * proposals stay pending — merely unacceptable while unfriended, because the
+ * accept route's commitment-time guard requires a live bond; re-adding
+ * revives them. No sweep code here, deliberately (route-tested).
  */
 friends.delete('/:id', async (c) => {
   const me = c.get('user');

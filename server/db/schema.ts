@@ -32,11 +32,17 @@ export const friendshipStatus = pgEnum('friendship_status', [
   'blocked',
 ]);
 export const pactType = pgEnum('pact_type', ['frequency', 'goal']);
+// 'pending' and 'declined' are the Proposal states (ADR-0006): only MUTUAL
+// pacts ever carry them — a solo pact is never a proposal. They are appended
+// (not inserted in lifecycle order) so drizzle-kit diffs to plain
+// `ALTER TYPE … ADD VALUE` statements instead of recreating the type.
 export const pactStatus = pgEnum('pact_status', [
   'active',
   'completed',
   'incomplete',
   'cancelled',
+  'pending',
+  'declined',
 ]);
 export const checkInStatus = pgEnum('check_in_status', ['completed', 'failed']);
 export const notificationType = pgEnum('notification_type', [

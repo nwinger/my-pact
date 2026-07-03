@@ -181,7 +181,7 @@ export function ProfileScreen() {
         <BodyBold>Fine print</BodyBold>
         <Body color={colors.ink50} style={{ fontSize: 13.5, lineHeight: 19 }}>
           Check-ins close at midnight in your timezone, plus a 30-minute grace
-          period. Your keeper hears about everything — that’s the point.
+          period. Your keeper sees every pact you make — that’s the point.
         </Body>
       </Animated.View>
     </ScrollView>

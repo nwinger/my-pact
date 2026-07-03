@@ -33,7 +33,8 @@ import {
   Kicker,
   Small,
 } from '@/components/ui/type';
-import { daysUntil, formatShort, relativeLabel, todayKey } from '@/lib/dates';
+import { errorMessage } from '@/lib/api';
+import { DAY_SHORT, daysUntil, formatShort, relativeLabel, todayKey } from '@/lib/dates';
 import {
   completedCount,
   currentStreak,
@@ -59,6 +60,10 @@ export default function PactDetail() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
+  // Breaking the pact is a server write now: pend while in flight and keep
+  // the sheet open with the error when the server rejects it.
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const history = useMemo(
     () =>
@@ -100,8 +105,11 @@ export default function PactDetail() {
   const iAmCreator = pact.creatorUserId === me.id;
 
   const tint = ticketTints[pact.tintIndex % ticketTints.length];
-  const ratio = progressRatio(pact, checkIns);
-  const streak = currentStreak(pact, checkIns);
+  // The keeper's detail is the contract sheet ONLY: check-ins live on the
+  // creator's device until they sync, so progress/streak blocks here would
+  // be fabricated from absent data. Numbers are creator-only.
+  const ratio = iAmCreator ? progressRatio(pact, checkIns) : 0;
+  const streak = iAmCreator ? currentStreak(pact, checkIns) : 0;
   const done = hasCheckedInOn(checkIns, pact, todayKey());
   const due = isDueToday(pact);
   const remaining = daysUntil(pact.endDate);
@@ -181,50 +189,66 @@ export default function PactDetail() {
           </View>
 
           <View style={{ padding: 20, gap: 18 }}>
-            {/* hero numbers */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-              <ProgressRing ratio={ratio} size={86} stroke={7} delay={250}>
-                <View style={{ alignItems: 'center' }}>
-                  <BodyBold style={{ fontSize: 18 }}>{Math.round(ratio * 100)}%</BodyBold>
-                  <Small color={colors.ink50} style={{ fontSize: 10 }}>
-                    kept
-                  </Small>
-                </View>
-              </ProgressRing>
-              <View style={{ flex: 1, gap: 10 }}>
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <View style={{ flex: 1, gap: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <FlameIcon size={16} color={colors.seal} fill={colors.seal} strokeWidth={1.4} />
-                      <BodyBold style={{ fontSize: 18 }}>{streak}</BodyBold>
-                    </View>
-                    <Small color={colors.ink50}>streak</Small>
-                  </View>
-                  <View style={{ flex: 1, gap: 1 }}>
-                    <BodyBold style={{ fontSize: 18 }}>
-                      {pact.type === 'goal'
-                        ? `${goalProgress(pact, checkIns)}`
-                        : completedCount(pact, checkIns)}
-                    </BodyBold>
-                    <Small color={colors.ink50}>
-                      {pact.type === 'goal' ? `of ${pact.goalTarget} ${pact.goalUnit}` : 'seals'}
+            {/* hero numbers — creator-only: computed from this device's check-ins */}
+            {iAmCreator && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
+                <ProgressRing ratio={ratio} size={86} stroke={7} delay={250}>
+                  <View style={{ alignItems: 'center' }}>
+                    <BodyBold style={{ fontSize: 18 }}>{Math.round(ratio * 100)}%</BodyBold>
+                    <Small color={colors.ink50} style={{ fontSize: 10 }}>
+                      kept
                     </Small>
                   </View>
-                  <View style={{ flex: 1, gap: 1 }}>
-                    <BodyBold style={{ fontSize: 18 }}>
-                      {remaining >= 0 ? remaining : 0}
-                    </BodyBold>
-                    <Small color={colors.ink50}>days left</Small>
+                </ProgressRing>
+                <View style={{ flex: 1, gap: 10 }}>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <View style={{ flex: 1, gap: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <FlameIcon size={16} color={colors.seal} fill={colors.seal} strokeWidth={1.4} />
+                        <BodyBold style={{ fontSize: 18 }}>{streak}</BodyBold>
+                      </View>
+                      <Small color={colors.ink50}>streak</Small>
+                    </View>
+                    <View style={{ flex: 1, gap: 1 }}>
+                      <BodyBold style={{ fontSize: 18 }}>
+                        {pact.type === 'goal'
+                          ? `${goalProgress(pact, checkIns)}`
+                          : completedCount(pact, checkIns)}
+                      </BodyBold>
+                      <Small color={colors.ink50}>
+                        {pact.type === 'goal' ? `of ${pact.goalTarget} ${pact.goalUnit}` : 'seals'}
+                      </Small>
+                    </View>
+                    <View style={{ flex: 1, gap: 1 }}>
+                      <BodyBold style={{ fontSize: 18 }}>
+                        {remaining >= 0 ? remaining : 0}
+                      </BodyBold>
+                      <Small color={colors.ink50}>days left</Small>
+                    </View>
                   </View>
                 </View>
               </View>
-            </View>
+            )}
 
-            {/* last 7 days */}
-            <View style={{ gap: 8 }}>
-              <Kicker color={colors.ink50}>This week</Kicker>
-              <WeekStrip cells={lastSevenDays(pact, checkIns)} />
-            </View>
+            {/* last 7 days — creator-only, same reason */}
+            {iAmCreator && (
+              <View style={{ gap: 8 }}>
+                <Kicker color={colors.ink50}>This week</Kicker>
+                <WeekStrip cells={lastSevenDays(pact, checkIns)} />
+              </View>
+            )}
+
+            {/* the keeper reads the terms: the cadence spelled out */}
+            {!iAmCreator && pact.type === 'frequency' && (
+              <View style={{ gap: 6 }}>
+                <Kicker color={colors.ink50}>The cadence</Kicker>
+                <Body color={colors.ink70}>
+                  {(pact.daysOfWeek?.length ?? 0) === 7
+                    ? 'Every day'
+                    : (pact.daysOfWeek ?? []).map((d) => DAY_SHORT[d]).join(' · ')}
+                </Body>
+              </View>
+            )}
 
             {/* signature block */}
             <View
@@ -282,9 +306,7 @@ export default function PactDetail() {
                 {done ? 'Sealed for today' : 'Today needs your seal'}
               </BodyBold>
               <Small style={{ color: done ? colors.ink70 : 'rgba(247,241,230,0.6)' }}>
-                {done
-                  ? `${keeper?.username} has been told. Rest easy.`
-                  : 'Closes at midnight + 30 min grace.'}
+                {done ? 'Sealed and on the record. Rest easy.' : 'Closes at midnight + 30 min grace.'}
               </Small>
             </View>
             <SealButton
@@ -298,21 +320,25 @@ export default function PactDetail() {
           </Animated.View>
         )}
 
-        {/* actions */}
+        {/* actions — the ledger is creator-only until check-ins sync: a
+            keeper's device holds none, and an empty ledger would read as
+            "never sealed" rather than "not visible yet" */}
         <Animated.View entering={FadeInDown.delay(300).duration(450)} style={{ gap: 10 }}>
-          <PressableScale
-            onPress={() => setHistoryOpen(true)}
-            style={{
-              borderWidth: 1.5,
-              borderColor: colors.ink,
-              backgroundColor: colors.card,
-              borderRadius: radii.pill,
-              paddingVertical: 14,
-              alignItems: 'center',
-            }}
-          >
-            <BodySemi>Check-in history · {history.length}</BodySemi>
-          </PressableScale>
+          {iAmCreator && (
+            <PressableScale
+              onPress={() => setHistoryOpen(true)}
+              style={{
+                borderWidth: 1.5,
+                borderColor: colors.ink,
+                backgroundColor: colors.card,
+                borderRadius: radii.pill,
+                paddingVertical: 14,
+                alignItems: 'center',
+              }}
+            >
+              <BodySemi>Check-in history · {history.length}</BodySemi>
+            </PressableScale>
+          )}
           {iAmCreator && pact.status === 'active' && (
             <PressableScale
               onPress={() => setConfirmCancel(true)}
@@ -388,22 +414,35 @@ export default function PactDetail() {
         <View style={{ padding: 24, paddingBottom: 44, gap: 14 }}>
           <Heading>Break this pact?</Heading>
           <Body color={colors.ink70}>
-            This is irreversible — the contract is voided and {keeper?.username} will be
-            told. Your check-in history stays on the record.
+            This is irreversible — the contract is voided and the broken seal stays on the
+            record. Your check-in history stays too.
           </Body>
+          {cancelError && <Small color={colors.failed}>{cancelError}</Small>}
           <PressableScale
-            onPress={() => {
-              cancelPact(pact.id);
-              setConfirmCancel(false);
+            onPress={async () => {
+              if (cancelBusy) return;
+              setCancelBusy(true);
+              setCancelError(null);
+              try {
+                await cancelPact(pact.id);
+                setConfirmCancel(false);
+              } catch (e) {
+                setCancelError(errorMessage(e));
+              } finally {
+                setCancelBusy(false);
+              }
             }}
+            disabled={cancelBusy}
             style={{
-              backgroundColor: colors.failed,
+              backgroundColor: cancelBusy ? colors.failedSoft : colors.failed,
               borderRadius: radii.pill,
               paddingVertical: 15,
               alignItems: 'center',
             }}
           >
-            <BodyBold style={{ color: colors.white }}>Yes, break it</BodyBold>
+            <BodyBold style={{ color: colors.white }}>
+              {cancelBusy ? 'Breaking…' : 'Yes, break it'}
+            </BodyBold>
           </PressableScale>
           <PressableScale
             onPress={() => setConfirmCancel(false)}
